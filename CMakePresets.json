@@ -40,10 +40,10 @@
       "displayName": "x64 Debug (vcpkg)",
       "inherits": "x64-debug",
       "environment": {
-        "VCPKG_ROOT": "C:/Users/Max/Desktop/vcpkg"
+        "VCPKG_ROOT": "C:/Users/maxim/Desktop/vcpkg"
       },
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "C:/Users/Max/Desktop/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_TOOLCHAIN_FILE": "C:/Users/maxim/Desktop/vcpkg/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_TARGET_TRIPLET": "x64-windows",
         "VCPKG_APPLOCAL_DEPS": "ON", // copia DLLs al lado del .exe
         "CMAKE_CXX_STANDARD": "20",
@@ -55,10 +55,10 @@
       "displayName": "x64 Release (vcpkg)",
       "inherits": "x64-release",
       "environment": {
-        "VCPKG_ROOT": "C:/Users/Max/Desktop/vcpkg"
+        "VCPKG_ROOT": "C:/Users/maxim/Desktop/vcpkg"
       },
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "C:/Users/Max/Desktop/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_TOOLCHAIN_FILE": "C:/Users/maxim/Desktop/vcpkg/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_TARGET_TRIPLET": "x64-windows",
         "VCPKG_APPLOCAL_DEPS": "ON",
         "CMAKE_CXX_STANDARD": "20",
