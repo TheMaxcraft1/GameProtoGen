@@ -472,3 +472,4 @@ vcpkg_installed/
 # End of https://www.toptal.com/developers/gitignore/api/vcpkg
 
 out/
+CMakePresets.json
