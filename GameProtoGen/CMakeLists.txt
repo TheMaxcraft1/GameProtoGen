@@ -51,9 +51,11 @@ FetchContent_MakeAvailable(imgui-sfml)
 
 # ---------- Tu ejecutable ----------
 add_executable(GameProtoGen
-  GameProtoGen.cpp
-  "Headers/GameProtoGen.h"
- "Headers/Application.h" "SFMLWindow.cpp" "ImGuiLayer.cpp")
+    EditorApp.cpp
+    Application.cpp
+    SFMLWindow.cpp
+    ImGuiLayer.cpp
+ "Headers/ImGuiLayer.h")
 
 target_link_libraries(GameProtoGen PRIVATE
   SFML::Graphics
@@ -73,4 +75,4 @@ if (MSVC)
   add_compile_options("/utf-8")
 endif()
 
-target_include_directories(GameProtoGen PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(GameProtoGen PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Headers)
