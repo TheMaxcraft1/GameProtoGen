@@ -49,13 +49,11 @@ FetchContent_Declare(imgui-sfml
 FetchContent_MakeAvailable(imgui-sfml)
 # Target: ImGui-SFML::ImGui-SFML
 
-
-
 # ---------- Tu ejecutable ----------
 add_executable(GameProtoGen
   GameProtoGen.cpp
-  GameProtoGen.h
-)
+  "Headers/GameProtoGen.h"
+ "Headers/Application.h" "SFMLWindow.cpp" "ImGuiLayer.cpp")
 
 target_link_libraries(GameProtoGen PRIVATE
   SFML::Graphics
@@ -63,5 +61,16 @@ target_link_libraries(GameProtoGen PRIVATE
   SFML::System
   ImGui-SFML::ImGui-SFML
 )
+
+# Copia toda la carpeta Assets al directorio donde queda la .exe (Debug/Release)
+add_custom_command(TARGET GameProtoGen POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/Assets
+            $<TARGET_FILE_DIR:GameProtoGen>/Assets
+)
+
+if (MSVC)
+  add_compile_options("/utf-8")
+endif()
 
 target_include_directories(GameProtoGen PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
