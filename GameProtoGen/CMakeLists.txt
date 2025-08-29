@@ -55,7 +55,9 @@ add_executable(GameProtoGen
     Application.cpp
     SFMLWindow.cpp
     ImGuiLayer.cpp
- "Headers/ImGuiLayer.h")
+    InspectorPanel.cpp
+    ViewportPanel.cpp
+ "Headers/ImGuiLayer.h" "Headers/SceneContext.h" "Headers/InspectorPanel.h" "InspectorPanel.cpp" "ViewportPanel.cpp")
 
 target_link_libraries(GameProtoGen PRIVATE
   SFML::Graphics

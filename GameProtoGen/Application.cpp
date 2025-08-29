@@ -1,4 +1,7 @@
 #include "Headers/Application.h"
+#include <imgui.h>
+#include <imgui-SFML.h>
+#include "Headers/SFMLWindow.h"
 #include <chrono>
 
 namespace gp {
@@ -26,17 +29,29 @@ namespace gp {
             float dt = std::chrono::duration<float>(now - last).count();
             last = now;
 
+            // 1) Update (abre el frame)
             for (auto* l : m_Layers) l->OnUpdate(Timestep{ dt });
+
+            // 2) Dibujar ventanas
             for (auto* l : m_Layers) l->OnGuiRender();
 
+            // 3) Renderizar ImGui al final del frame
+            ImGui::SFML::Render(static_cast<gp::SFMLWindow&>(*m_Window).Native());
+
+            // 4) Presentar
             m_Window->SwapBuffers();
         }
     }
 
-    void Application::PushLayer(Layer* layer) { m_Layers.emplace_back(layer); }
+    void Application::PushLayer(Layer* layer) {
+        m_Layers.emplace_back(layer);
+    }
 
     void Application::OnEvent(const Event& e) {
-        if (e.type == Event::Type::Closed) m_Running = false;
+        if (e.type == Event::Type::Closed) {
+            m_Running = false;
+        }
+        // más adelante podés propagar eventos a las layers si querés
     }
 
 } // namespace gp
