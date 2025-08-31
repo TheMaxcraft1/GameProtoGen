@@ -11,6 +11,7 @@ public:
 
 private:
     std::unique_ptr<sf::RenderTexture> m_RT;
+    std::unique_ptr<sf::RenderTexture> m_PresentRT;
     sf::Clock m_Clock;
 
     // Resolución virtual fija (16:9) – estilo Unity "Game View"
