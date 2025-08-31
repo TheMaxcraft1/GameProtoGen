@@ -4,46 +4,77 @@
 
 #include <imgui.h>
 #include <imgui-SFML.h>
-#include <cmath> // std::floor
+#include <cmath>
+
+static inline void ClampDockedMinWidth(float minW) {
+    if (ImGui::GetWindowWidth() < minW) {
+        ImGui::SetWindowSize(ImVec2(minW, ImGui::GetWindowHeight()));
+    }
+}
 
 ViewportPanel::ViewportPanel() {}
 
-void ViewportPanel::EnsureRT(unsigned w, unsigned h) {
-    if (w == 0 || h == 0) return;
-    if (!m_RT || m_RT->getSize().x != w || m_RT->getSize().y != h) {
-        m_RT = std::make_unique<sf::RenderTexture>(sf::Vector2u{ w, h });
+void ViewportPanel::EnsureRT() {
+    if (!m_RT || m_RT->getSize().x != m_VirtW || m_RT->getSize().y != m_VirtH) {
+        m_RT = std::make_unique<sf::RenderTexture>(sf::Vector2u{ m_VirtW, m_VirtH });
         m_RT->setSmooth(true);
+
+        // Configurar la View en SFML 3 (sin reset):
+        sf::View v;
+        // Tamaño de la view (world units = píxeles virtuales)
+        v.setSize(sf::Vector2f(static_cast<float>(m_VirtW), static_cast<float>(m_VirtH)));
+        // Centro de la view (usa Vector2f, NO dos floats)
+        v.setCenter(sf::Vector2f(static_cast<float>(m_VirtW) * 0.5f,
+            static_cast<float>(m_VirtH) * 0.5f));
+        // (Opcional: viewport de la view en el render target; por defecto [0,0,1,1])
+        m_RT->setView(v);
     }
 }
 
 void ViewportPanel::OnUpdate(const gp::Timestep&) {
-    // (física / lógica más adelante)
+    // lógica/física, si aplica
 }
 
 void ViewportPanel::OnGuiRender() {
     auto& ctx = SceneContext::Get();
 
-    // 1) Sin padding
+    // Ventana sin padding + mínimo de ancho real
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::Begin("Viewport", nullptr,
-        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ClampDockedMinWidth(480.0f);
 
-    // 2) Tomar exactamente el área disponible (en píxeles enteros)
+    // Medimos área disponible
     ImVec2 avail = ImGui::GetContentRegionAvail();
-    unsigned w = (unsigned)(avail.x > 1 ? floorf(avail.x) : 1);
-    unsigned h = (unsigned)(avail.y > 1 ? floorf(avail.y) : 1);
 
-    // 3) Recrear RT si cambió
-    EnsureRT(w, h);
+    // Calculamos rectángulo 16:9 máximo que entra (fit-width, fallback a fit-height)
+    float targetW = std::floor(avail.x > 1 ? avail.x : 1.0f);
+    float targetH = std::floor(targetW * 9.0f / 16.0f);
+    if (targetH > avail.y) {
+        targetH = std::floor(avail.y > 1 ? avail.y : 1.0f);
+        targetW = std::floor(targetH * 16.0f / 9.0f);
+    }
 
-    // 4) Dibujar y estampar la textura al tamaño exacto del panel
+    // Creamos (o reusamos) RT de resolución virtual fija
+    EnsureRT();
+
     if (m_RT) {
+        // Render a resolución fija (m_VirtW x m_VirtH)
         m_RT->clear(sf::Color(30, 30, 35));
-        if (SceneContext::Get().scene) {
-            Renderer2D::Draw(*SceneContext::Get().scene, *m_RT);
+        if (ctx.scene) {
+            Renderer2D::Draw(*ctx.scene, *m_RT);
         }
         m_RT->display();
-        ImGui::Image(m_RT->getTexture(), avail);
+
+        // Centrado (letterboxing)
+        ImVec2 imgSize{ targetW, targetH };
+        ImVec2 cur = ImGui::GetCursorPos();
+        ImVec2 offset{ (avail.x - imgSize.x) * 0.5f, (avail.y - imgSize.y) * 0.5f };
+        if (offset.x < 0) offset.x = 0;
+        if (offset.y < 0) offset.y = 0;
+        ImGui::SetCursorPos(ImVec2(cur.x + offset.x, cur.y + offset.y));
+
+        // ¡Escalado! — mostramos la textura virtual al tamaño calculado
+        ImGui::Image(m_RT->getTexture(), imgSize);
     }
     else {
         ImGui::TextUnformatted("Creando RenderTexture...");

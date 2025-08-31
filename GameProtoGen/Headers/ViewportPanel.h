@@ -11,8 +11,11 @@ public:
 
 private:
     std::unique_ptr<sf::RenderTexture> m_RT;
-    sf::CircleShape m_Circle;
-    sf::Clock m_Clock; // por si lo querés usar más adelante
+    sf::Clock m_Clock;
 
-    void EnsureRT(unsigned w, unsigned h);
+    // Resolución virtual fija (16:9) – estilo Unity "Game View"
+    const unsigned m_VirtW = 1600;
+    const unsigned m_VirtH = 900;
+
+    void EnsureRT(); // crea m_RT con m_VirtW x m_VirtH
 };
