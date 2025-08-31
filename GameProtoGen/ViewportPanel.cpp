@@ -1,6 +1,7 @@
 #include "Headers/ViewportPanel.h"
 #include "Headers/SceneContext.h"
 #include "Headers/Renderer2D.h"
+#include "Headers/PhysicsSystem.h"
 
 #include <imgui.h>
 #include <imgui-SFML.h>
@@ -42,8 +43,21 @@ void ViewportPanel::EnsureRT() {
     }
 }
 
-void ViewportPanel::OnUpdate(const gp::Timestep&) {
-    // lógica/física si aplica
+void ViewportPanel::OnUpdate(const gp::Timestep& dt) {
+    auto& ctx = SceneContext::Get();
+    if (!ctx.scene) return;
+
+    // 1) Input jugador
+    Systems::PlayerControllerSystem::Update(*ctx.scene, dt.dt);
+
+    // 2) Física
+    Systems::PhysicsSystem::Update(*ctx.scene, dt.dt);
+
+    // 3) Colisiones (suelo plano + AABB con estáticos)
+    Systems::CollisionSystem::SolveGround(*ctx.scene, /*groundY*/ 900.f); // borde inferior del “mundo” 16:9
+    Systems::CollisionSystem::SolveAABB(*ctx.scene);
+
+    // (Si querés, podés hacer post-procesos aquí)
 }
 
 void ViewportPanel::OnGuiRender() {
