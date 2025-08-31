@@ -14,8 +14,10 @@ public:
 
     // Component storage (MVP: maps por tipo)
     std::unordered_map<EntityID, Transform> transforms;
-    std::unordered_map<EntityID, Sprite>    sprites;
-    std::unordered_map<EntityID, Collider>  colliders;
+    std::unordered_map<EntityID, Sprite> sprites;
+    std::unordered_map<EntityID, Collider> colliders;
+    std::unordered_map<EntityID, Physics2D> physics;
+    std::unordered_map<EntityID, PlayerController> playerControllers;
 
     const std::vector<Entity>& Entities() const { return m_Entities; }
 

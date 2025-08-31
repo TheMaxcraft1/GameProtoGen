@@ -19,3 +19,15 @@ struct Collider {
     sf::Vector2f halfExtents{ 50.f, 50.f };
     sf::Vector2f offset{ 0.f, 0.f };
 };
+
+struct Physics2D {
+    sf::Vector2f velocity{ 0.f, 0.f };
+    float gravity = 2000.f;   // px/s^2 (ajustá a gusto)
+    bool gravityEnabled = true;
+    bool onGround = false;
+};
+
+struct PlayerController {
+    float moveSpeed = 500.f;  // px/s
+    float jumpSpeed = 900.f;  // px/s (hacia arriba = negativo si y+ va hacia abajo)
+};

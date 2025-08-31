@@ -5,6 +5,7 @@
 #include <imgui.h>
 #include <imgui-SFML.h>
 #include <cmath>
+#include <algorithm> // std::clamp
 
 static inline void ClampDockedMinWidth(float minW) {
     if (ImGui::GetWindowWidth() < minW) {
@@ -32,7 +33,7 @@ void ViewportPanel::EnsureRT() {
 }
 
 void ViewportPanel::OnUpdate(const gp::Timestep&) {
-    // lógica/física, si aplica
+    // lógica/física, si aplica (los sistemas pueden correrse acá)
 }
 
 void ViewportPanel::OnGuiRender() {
@@ -60,12 +61,50 @@ void ViewportPanel::OnGuiRender() {
     if (m_RT) {
         // Render a resolución fija (m_VirtW x m_VirtH)
         m_RT->clear(sf::Color(30, 30, 35));
+
         if (ctx.scene) {
+            // -------------------------------
+            // Cámara que sigue al jugador
+            // -------------------------------
+            // 1) Elegimos un "player" preferente:
+            //    - si la entidad seleccionada tiene PlayerController -> esa
+            //    - si no, tomamos el primero del map playerControllers (fallback)
+            EntityID playerId = 0;
+            if (ctx.selected && ctx.scene->playerControllers.contains(ctx.selected.id)) {
+                playerId = ctx.selected.id;
+            }
+            else if (!ctx.scene->playerControllers.empty()) {
+                playerId = ctx.scene->playerControllers.begin()->first;
+            }
+
+            // 2) Centro de cámara: por defecto al centro de la vista
+            sf::Vector2f camCenter{ static_cast<float>(m_VirtW) * 0.5f,
+                                    static_cast<float>(m_VirtH) * 0.5f };
+
+            if (playerId && ctx.scene->transforms.contains(playerId)) {
+                camCenter = ctx.scene->transforms[playerId].position;
+
+                // (Opcional) Clamp para no mostrar más allá del "mundo".
+                // En MVP, el “mundo” tiene mismo tamaño que la vista virtual (m_VirtW x m_VirtH).
+                // Si tu nivel es más grande, actualizá estos límites a tu world bounds reales.
+                const float worldW = static_cast<float>(m_VirtW);
+                const float worldH = static_cast<float>(m_VirtH);
+                camCenter.x = std::clamp(camCenter.x, worldW * 0.5f, worldW - worldW * 0.5f);
+                camCenter.y = std::clamp(camCenter.y, worldH * 0.5f, worldH - worldH * 0.5f);
+            }
+
+            // 3) Aplicamos el centro a la view del RenderTexture
+            sf::View v = m_RT->getView();
+            v.setCenter(camCenter);
+            m_RT->setView(v);
+
+            // 4) Dibujamos la escena con la cámara ya ajustada
             Renderer2D::Draw(*ctx.scene, *m_RT);
         }
+
         m_RT->display();
 
-        // Centrado (letterboxing)
+        // Centrado (letterboxing) en la ventana ImGui
         ImVec2 imgSize{ targetW, targetH };
         ImVec2 cur = ImGui::GetCursorPos();
         ImVec2 offset{ (avail.x - imgSize.x) * 0.5f, (avail.y - imgSize.y) * 0.5f };

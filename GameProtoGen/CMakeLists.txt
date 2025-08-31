@@ -76,7 +76,7 @@ add_executable(GameProtoGen
     Headers/Renderer2D.h
     Headers/Entity.h
     Headers/SceneSerializer.h
- "Headers/ImGuiLayer.h" "Headers/SceneContext.h" "Headers/InspectorPanel.h" "InspectorPanel.cpp" "ViewportPanel.cpp" "Headers/Components.h" "Headers/Scene.h" "Headers/Renderer2D.h" "Headers/SceneSerializer.h" "Scene.cpp" "Renderer2D.cpp" "SceneSerializer.cpp" "Headers/EditorFonts.h")
+ "Headers/ImGuiLayer.h" "Headers/SceneContext.h" "Headers/InspectorPanel.h" "InspectorPanel.cpp" "ViewportPanel.cpp" "Headers/Components.h" "Headers/Scene.h" "Headers/Renderer2D.h" "Headers/SceneSerializer.h" "Scene.cpp" "Renderer2D.cpp" "SceneSerializer.cpp" "Headers/EditorFonts.h" "Headers/PhysicsSystem.h")
 
 target_link_libraries(GameProtoGen PRIVATE
   SFML::Graphics
