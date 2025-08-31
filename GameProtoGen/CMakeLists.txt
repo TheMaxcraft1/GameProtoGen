@@ -23,6 +23,13 @@ FetchContent_Declare(sfml
 FetchContent_MakeAvailable(sfml)
 # Targets que exporta: SFML::System SFML::Window SFML::Graphics ...
 
+# ---------- nlohmann/json ----------
+FetchContent_Declare(json
+  GIT_REPOSITORY https://github.com/nlohmann/json.git
+  GIT_TAG v3.11.3
+)
+FetchContent_MakeAvailable(json)
+
 # ---------- Dear ImGui (rama docking) ----------
 FetchContent_Declare(imgui
   GIT_REPOSITORY https://github.com/ocornut/imgui.git
@@ -57,13 +64,26 @@ add_executable(GameProtoGen
     ImGuiLayer.cpp
     InspectorPanel.cpp
     ViewportPanel.cpp
- "Headers/ImGuiLayer.h" "Headers/SceneContext.h" "Headers/InspectorPanel.h" "InspectorPanel.cpp" "ViewportPanel.cpp")
+    Scene.cpp
+    Renderer2D.cpp
+    SceneSerializer.cpp
+    Headers/ImGuiLayer.h
+    Headers/SceneContext.h
+    Headers/InspectorPanel.h
+    Headers/ViewportPanel.h
+    Headers/Scene.h
+    Headers/Components.h
+    Headers/Renderer2D.h
+    Headers/Entity.h
+    Headers/SceneSerializer.h
+ "Headers/ImGuiLayer.h" "Headers/SceneContext.h" "Headers/InspectorPanel.h" "InspectorPanel.cpp" "ViewportPanel.cpp" "Headers/Components.h" "Headers/Scene.h" "Headers/Renderer2D.h" "Headers/SceneSerializer.h" "Scene.cpp" "Renderer2D.cpp" "SceneSerializer.cpp" "Headers/EditorFonts.h")
 
 target_link_libraries(GameProtoGen PRIVATE
   SFML::Graphics
   SFML::Window
   SFML::System
   ImGui-SFML::ImGui-SFML
+  nlohmann_json::nlohmann_json
 )
 
 # Copia toda la carpeta Assets al directorio donde queda la .exe (Debug/Release)

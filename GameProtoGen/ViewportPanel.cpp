@@ -1,13 +1,12 @@
 #include "Headers/ViewportPanel.h"
 #include "Headers/SceneContext.h"
+#include "Headers/Renderer2D.h"
 
 #include <imgui.h>
-#include <imgui-SFML.h> // para ImGui::Image(sf::Texture,...)
+#include <imgui-SFML.h>
+#include <cmath> // std::floor
 
-ViewportPanel::ViewportPanel() : m_Circle(50.f) {
-    m_Circle.setOrigin({ 50.f, 50.f });
-    m_Circle.setFillColor(sf::Color::Green);
-}
+ViewportPanel::ViewportPanel() {}
 
 void ViewportPanel::EnsureRT(unsigned w, unsigned h) {
     if (w == 0 || h == 0) return;
@@ -18,39 +17,38 @@ void ViewportPanel::EnsureRT(unsigned w, unsigned h) {
 }
 
 void ViewportPanel::OnUpdate(const gp::Timestep&) {
-    // Nada por ahora (cuando metamos ECS/física, irá aquí el render del “juego”)
+    // (física / lógica más adelante)
 }
 
 void ViewportPanel::OnGuiRender() {
     auto& ctx = SceneContext::Get();
 
+    // 1) Sin padding
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::Begin("Viewport", nullptr,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
+    // 2) Tomar exactamente el área disponible (en píxeles enteros)
     ImVec2 avail = ImGui::GetContentRegionAvail();
-    unsigned vw = (unsigned)std::max(1.0f, avail.x);
-    unsigned vh = (unsigned)std::max(1.0f, avail.y);
-    EnsureRT(vw, vh);
+    unsigned w = (unsigned)(avail.x > 1 ? floorf(avail.x) : 1);
+    unsigned h = (unsigned)(avail.y > 1 ? floorf(avail.y) : 1);
 
+    // 3) Recrear RT si cambió
+    EnsureRT(w, h);
+
+    // 4) Dibujar y estampar la textura al tamaño exacto del panel
     if (m_RT) {
-        // aplicar estado del Inspector
-        m_Circle.setRadius(ctx.radius);
-        m_Circle.setOrigin({ ctx.radius, ctx.radius });
-        m_Circle.setFillColor(sf::Color(
-            int(ctx.color.x * 255),
-            int(ctx.color.y * 255),
-            int(ctx.color.z * 255)
-        ));
-
         m_RT->clear(sf::Color(30, 30, 35));
-        m_Circle.setPosition({ vw * 0.5f, vh * 0.5f });
-        m_RT->draw(m_Circle);
+        if (SceneContext::Get().scene) {
+            Renderer2D::Draw(*SceneContext::Get().scene, *m_RT);
+        }
         m_RT->display();
-
-        ImGui::Image(m_RT->getTexture(), { avail.x, avail.y });
+        ImGui::Image(m_RT->getTexture(), avail);
     }
     else {
         ImGui::TextUnformatted("Creando RenderTexture...");
     }
+
     ImGui::End();
+    ImGui::PopStyleVar();
 }

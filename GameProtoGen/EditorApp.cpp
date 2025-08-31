@@ -3,6 +3,9 @@
 #include "Headers/ImGuiLayer.h"
 #include "Headers/InspectorPanel.h"
 #include "Headers/ViewportPanel.h"
+#include "Headers/SceneContext.h"
+#include "Headers/Scene.h"
+#include "Headers/Components.h"
 
 class EditorApp : public gp::Application {
 public:
@@ -12,6 +15,14 @@ public:
         PushLayer(new ImGuiLayer(win));
         PushLayer(new ViewportPanel());
         PushLayer(new InspectorPanel());
+
+        // --- Semilla de escena (reemplaza el círculo demo) ---
+        auto& ctx = SceneContext::Get();
+        ctx.scene = std::make_shared<Scene>();
+        auto e = ctx.scene->CreateEntity();
+        ctx.scene->transforms[e.id] = Transform{ {800.f, 450.f}, {1.f,1.f}, 0.f };
+        ctx.scene->sprites[e.id] = Sprite{ {150.f,150.f}, sf::Color(0,255,0,255) };
+        ctx.selected = e;
     }
 };
 

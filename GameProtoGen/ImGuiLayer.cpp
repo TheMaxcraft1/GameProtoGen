@@ -1,5 +1,6 @@
 #include "Headers/ImGuiLayer.h"
 #include "Headers/SFMLWindow.h"
+#include "Headers/EditorFonts.h" 
 
 #include <imgui.h>
 #include <imgui-SFML.h>
@@ -19,10 +20,23 @@ void ImGuiLayer::OnAttach() {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
+    // ---------- Fuentes ----------
     const ImWchar* ranges = io.Fonts->GetGlyphRangesDefault();
-    ImFont* roboto = io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-Regular.ttf", 22.0f, nullptr, ranges);
-    io.FontDefault = roboto;
+
+    // Regular (tamaño base del editor)
+    EditorFonts::Regular = io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-Regular.ttf", 20.0f, nullptr, ranges);
+
+    // H2 (título secciones) - Bold mediano
+    // Si no tenés Roboto-Bold.ttf, podés repetir Regular a mayor tamaño, pero no será "negrita" real.
+    EditorFonts::H2 = io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-Bold.ttf", 22.0f, nullptr, ranges);
+
+    // H1 (headers grandes) - Bold grande
+    EditorFonts::H1 = io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-Bold.ttf", 26.0f, nullptr, ranges);
+
+    // Fuente por defecto
+    io.FontDefault = EditorFonts::Regular;
     ImGui::SFML::UpdateFontTexture();
+
     ImGui::StyleColorsLight();
 }
 

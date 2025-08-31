@@ -1,14 +1,15 @@
 #pragma once
-#include <imgui.h>
+#include <memory>
+#include "Scene.h"
+#include "Entity.h"
 
-// Estado compartido temporal (hasta que metamos ECS/Scene).
 struct SceneContext {
-    float radius = 50.f;
-    ImVec4 color = ImVec4(0, 1, 0, 1);
+    std::shared_ptr<Scene> scene;
+    Entity selected{};
 
-    // Singleton simple para este MVP
     static SceneContext& Get() {
         static SceneContext ctx;
+        if (!ctx.scene) ctx.scene = std::make_shared<Scene>();
         return ctx;
     }
 };
