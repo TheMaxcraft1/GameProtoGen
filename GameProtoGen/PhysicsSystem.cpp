@@ -1,37 +1,24 @@
 #include "Headers/PhysicsSystem.h"
 #include "Headers/Components.h"
 #include <SFML/Window/Keyboard.hpp>
-#include <algorithm>
+#include <algorithm>   // std::clamp (si lo necesitás)
+#include <string>      // ← necesitabas esto si usabas std::string en helpers (ya lo quitamos)
 
 namespace Systems {
 
-    static inline bool Has(Scene& scene, EntityID id, const char* which) {
-        if (std::string{ which } == "Transform") return scene.transforms.contains(id);
-        if (std::string{ which } == "Physics2D") return scene.colliders.contains(id) == false; // placeholder (no uses)
-        return false;
-    }
-
+    // --- PlayerController: WASD / ←→ + Space ---
     void PlayerControllerSystem::Update(Scene& scene, float dt) {
         (void)dt;
-        // MVP: controlamos la PRIMER entidad que tenga PlayerController
+
+        // Tomamos el primer entity que tenga PlayerController (MVP)
         EntityID playerId = 0;
-        for (auto& [id, pc] : scene.colliders) { (void)id; (void)pc; } // placeholder para call graph
-
-        for (auto& [id, _pc] : scene.sprites) { (void)id; (void)_pc; } // noop
-
-        // Buscamos player por la existencia del componente PlayerController (que guardamos en un map aparte?).
-        // Para MVP, guardemos PlayerController en sprites? No. Mejor: agreguemos un map más al Scene.
-
-        // Como no queremos cambiar mucho, haremos una heurística: usaremos el PRIMER entity creado (seed) como jugador.
-        // Si querés más prolijo, agregá: std::unordered_map<EntityID, PlayerController> playerControllers; en Scene.h
-
-        // Hecha la nota, implementemos VERSION PROLIJA: asumimos que agregaste playerControllers en Scene.h
         for (auto& [id, pc] : scene.playerControllers) {
-            playerId = id;
             (void)pc;
+            playerId = id;
             break;
         }
         if (!playerId) return;
+
         auto itT = scene.transforms.find(playerId);
         auto itP = scene.physics.find(playerId);
         if (itT == scene.transforms.end() || itP == scene.physics.end()) return;
@@ -39,81 +26,89 @@ namespace Systems {
         auto& t = itT->second;
         auto& ph = itP->second;
 
-        // Input horizontal
-        float dir = 0.f;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::A) || sf::Keyboard::isKeyPressed(sf::Keyboard::Left))  dir -= 1.f;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::D) || sf::Keyboard::isKeyPressed(sf::Keyboard::Right)) dir += 1.f;
+        using Key = sf::Keyboard::Key;
 
-        // MoveSpeed: si tenés多个 jugadores, usa scene.playerControllers[playerId].moveSpeed
+        // Input horizontal (SFML 3: usar Keyboard::Key::X)
+        float dir = 0.f;
+        if (sf::Keyboard::isKeyPressed(Key::A) || sf::Keyboard::isKeyPressed(Key::Left))  dir -= 1.f;
+        if (sf::Keyboard::isKeyPressed(Key::D) || sf::Keyboard::isKeyPressed(Key::Right)) dir += 1.f;
+
         float moveSpeed = scene.playerControllers[playerId].moveSpeed;
         t.position.x += dir * moveSpeed * dt;
 
-        // Salto (solo si onGround)
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space) && ph.onGround) {
-            ph.velocity.y = -scene.playerControllers[playerId].jumpSpeed;
+        // Salto (solo si está en el suelo)
+        if (sf::Keyboard::isKeyPressed(Key::Space) && ph.onGround) {
+            ph.velocity.y = -scene.playerControllers[playerId].jumpSpeed; // y- hacia arriba
             ph.onGround = false;
         }
     }
 
+    // --- Física: integrar velocidad + gravedad ---
     void PhysicsSystem::Update(Scene& scene, float dt) {
-        // Integrar gravedad + velocidad
         for (auto& [id, ph] : scene.physics) {
             if (!scene.transforms.contains(id)) continue;
+
+            // Importante: resetear "onGround" cada frame; colisiones lo volverán a true
+            ph.onGround = false;
+
+            if (ph.gravityEnabled) {
+                ph.velocity.y += ph.gravity * dt;  // y+ hacia abajo en SFML
+            }
+
             auto& t = scene.transforms[id];
-
-            if (ph.gravityEnabled) ph.velocity.y += ph.gravity * dt;
-
             t.position += ph.velocity * dt;
         }
     }
 
-    static inline bool Overlap1D(float aMin, float aMax, float bMin, float bMax) {
-        return (aMin <= bMax) && (bMin <= aMax);
-    }
-
+    // --- AABB helper ---
     static inline bool AABBvsAABB(const sf::Vector2f& posA, const Collider& colA,
         const sf::Vector2f& posB, const Collider& colB,
         sf::Vector2f& mtvOut) {
-        // Centers son pos + offset; half extents del collider
-        sf::Vector2f cA = posA + colA.offset;
-        sf::Vector2f cB = posB + colB.offset;
+        const sf::Vector2f cA = posA + colA.offset;
+        const sf::Vector2f cB = posB + colB.offset;
 
-        sf::Vector2f d = cB - cA;
-        float ox = (colA.halfExtents.x + colB.halfExtents.x) - std::abs(d.x);
-        float oy = (colA.halfExtents.y + colB.halfExtents.y) - std::abs(d.y);
+        const sf::Vector2f d = cB - cA;
+        const float ox = (colA.halfExtents.x + colB.halfExtents.x) - std::abs(d.x);
+        const float oy = (colA.halfExtents.y + colB.halfExtents.y) - std::abs(d.y);
 
         if (ox > 0.f && oy > 0.f) {
-            // Penetración mínima
-            if (ox < oy) {
-                mtvOut = { (d.x < 0.f ? -ox : ox), 0.f };
-            }
-            else {
-                mtvOut = { 0.f, (d.y < 0.f ? -oy : oy) };
-            }
+            // Resolver por el eje de mínima penetración
+            if (ox < oy) mtvOut = { (d.x < 0.f ? -ox : ox), 0.f };
+            else         mtvOut = { 0.f, (d.y < 0.f ? -oy : oy) };
             return true;
         }
         return false;
     }
 
+    // --- Suelo plano en y = groundY ---
     void CollisionSystem::SolveGround(Scene& scene, float groundY) {
-        // Suelo plano: si el centro + halfExtents.y supera groundY -> clampa posición y resetea vel
         for (auto& [id, ph] : scene.physics) {
             if (!scene.transforms.contains(id) || !scene.colliders.contains(id)) continue;
+
             auto& t = scene.transforms[id];
             auto& c = scene.colliders[id];
 
-            float bottom = (t.position.y + c.offset.y) + c.halfExtents.y;
+            // Escala absoluta (por si hay flips)
+            const sf::Vector2f scaleAbs{ std::abs(t.scale.x), std::abs(t.scale.y) };
+
+            // Altura efectiva del AABB (prioriza Sprite.size; sino usa Collider.halfExtents)
+            float halfY = c.halfExtents.y * scaleAbs.y;
+            if (auto itS = scene.sprites.find(id); itS != scene.sprites.end()) {
+                halfY = (itS->second.size.y * scaleAbs.y) * 0.5f;
+            }
+
+            const float bottom = (t.position.y + c.offset.y) + halfY;
             if (bottom > groundY) {
-                float correction = bottom - groundY;
-                t.position.y -= correction;               // subimos hasta tocar el suelo
+                const float correction = bottom - groundY;
+                t.position.y -= correction;    // subir hasta tocar el suelo
                 ph.velocity.y = 0.f;
                 ph.onGround = true;
             }
         }
     }
 
+    // --- Dinámicos (con Physics2D) vs estáticos (sin Physics2D) ---
     void CollisionSystem::SolveAABB(Scene& scene) {
-        // Colisión entidad dinámica (tenga Physics2D) vs colliders estáticos (sin Physics2D)
         for (auto& [idA, phA] : scene.physics) {
             if (!scene.transforms.contains(idA) || !scene.colliders.contains(idA)) continue;
 
@@ -122,28 +117,59 @@ namespace Systems {
 
             for (auto& [idB, cB] : scene.colliders) {
                 if (idA == idB) continue;
-                // Considerá estático si no tiene Physics2D
-                if (scene.physics.contains(idB)) continue;
+                if (scene.physics.contains(idB)) continue;      // B debe ser estático
                 if (!scene.transforms.contains(idB)) continue;
 
                 auto& tB = scene.transforms[idB];
-                sf::Vector2f mtv{ 0.f, 0.f };
-                if (AABBvsAABB(tA.position, cA, tB.position, cB, mtv)) {
-                    tA.position -= mtv;
-                    // Reacción simple: si resolvimos en Y hacia arriba, marcamos onGround
-                    if (mtv.y < 0.f) {
-                        phA.velocity.y = 0.f;
-                        phA.onGround = true;
-                    }
-                    if (mtv.y > 0.f) {
-                        phA.velocity.y = 0.f;
-                    }
-                    if (mtv.x != 0.f) {
+
+                // ----- A: centro y halfExtents efectivos -----
+                const sf::Vector2f scaleA{ std::abs(tA.scale.x), std::abs(tA.scale.y) };
+                sf::Vector2f heA{
+                    cA.halfExtents.x * scaleA.x,
+                    cA.halfExtents.y * scaleA.y
+                };
+                if (auto itSA = scene.sprites.find(idA); itSA != scene.sprites.end()) {
+                    heA.x = (itSA->second.size.x * scaleA.x) * 0.5f;
+                    heA.y = (itSA->second.size.y * scaleA.y) * 0.5f;
+                }
+                const sf::Vector2f centerA = tA.position + cA.offset;
+
+                // ----- B: centro y halfExtents efectivos -----
+                const auto& cBref = cB; // alias
+                const auto& tBref = tB;
+                const sf::Vector2f scaleB{ std::abs(tBref.scale.x), std::abs(tBref.scale.y) };
+                sf::Vector2f heB{
+                    cBref.halfExtents.x * scaleB.x,
+                    cBref.halfExtents.y * scaleB.y
+                };
+                if (auto itSB = scene.sprites.find(idB); itSB != scene.sprites.end()) {
+                    heB.x = (itSB->second.size.x * scaleB.x) * 0.5f;
+                    heB.y = (itSB->second.size.y * scaleB.y) * 0.5f;
+                }
+                const sf::Vector2f centerB = tBref.position + cBref.offset;
+
+                // ----- Overlap -----
+                const sf::Vector2f d = centerB - centerA;
+                const float ox = (heA.x + heB.x) - std::abs(d.x);
+                const float oy = (heA.y + heB.y) - std::abs(d.y);
+
+                if (ox > 0.f && oy > 0.f) {
+                    // Resolver por eje de mínima penetración
+                    if (ox < oy) {
+                        const float pushX = (d.x < 0.f ? -ox : ox);
+                        tA.position.x -= pushX;
                         phA.velocity.x = 0.f;
+                    }
+                    else {
+                        const float pushY = (d.y < 0.f ? -oy : oy);
+                        tA.position.y -= pushY;
+                        phA.velocity.y = 0.f;
+                        if (pushY > 0.f) phA.onGround = true; // empujamos hacia arriba => aterriza
                     }
                 }
             }
         }
     }
+
 
 } // namespace Systems

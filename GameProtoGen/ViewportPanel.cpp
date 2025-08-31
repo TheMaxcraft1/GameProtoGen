@@ -96,10 +96,10 @@ void ViewportPanel::OnGuiRender() {
 
             if (playerId && ctx.scene->transforms.contains(playerId)) {
                 camCenter = ctx.scene->transforms[playerId].position;
-                const float worldW = static_cast<float>(m_VirtW);
-                const float worldH = static_cast<float>(m_VirtH);
-                camCenter.x = std::clamp(camCenter.x, worldW * 0.5f, worldW - worldW * 0.5f);
-                camCenter.y = std::clamp(camCenter.y, worldH * 0.5f, worldH - worldH * 0.5f);
+                //const float worldW = static_cast<float>(m_VirtW);
+                //const float worldH = static_cast<float>(m_VirtH);
+                //camCenter.x = std::clamp(camCenter.x, worldW * 0.5f, worldW - worldW * 0.5f);
+                //camCenter.y = std::clamp(camCenter.y, worldH * 0.5f, worldH - worldH * 0.5f);
             }
 
             sf::View v = m_RT->getView();
