@@ -1,10 +1,10 @@
 #pragma once
 #include "Application.h"
+#include "Entity.h"
 #include <memory>
+#include <optional>
+#include <imgui.h>
 #include <SFML/Graphics.hpp>
-#include "Entity.h" 
-#include <optional>     
-#include <imgui.h>      
 
 class ViewportPanel : public gp::Layer {
 public:
@@ -17,26 +17,41 @@ private:
     std::unique_ptr<sf::RenderTexture> m_PresentRT;
     sf::Clock m_Clock;
 
-    // Resolución virtual fija (16:9) – estilo Unity "Game View"
+    // Resolución virtual fija (16:9)
     const unsigned m_VirtW = 1600;
     const unsigned m_VirtH = 900;
 
+    /// --- simulación ---
+    // Arranca en PAUSA
+    bool m_Playing = false;
+
+    /// --- herramientas ---
+    enum class Tool { Select, Pan };
+    Tool m_Tool = Tool::Select;
+
     /// --- picking/drag ---
-    bool m_Dragging = false;
-    EntityID m_DragEntity = 0;
+    bool         m_Dragging = false;
+    EntityID     m_DragEntity = 0;
     sf::Vector2f m_DragOffset{ 0.f, 0.f };
 
-    bool m_EnableSnap = false;
+    // Snap siempre activo (tamaño de grilla)
     float m_Grid = 32.f;
 
-    void EnsureRT(); // crea m_RT con m_VirtW x m_VirtH
+    // Cámara
+    sf::Vector2f m_CamCenter{ m_VirtW * 0.5f, m_VirtH * 0.5f };
 
-    // Convierte mouse en world (si está sobre la imagen). Devuelve nullopt si está fuera.
+    // Pan (Q + LMB o herramienta Pan) solo en pausa
+    bool m_Panning = false;
+
+    void EnsureRT(); // crea/ajusta RTs con m_VirtW x m_VirtH
+
+    // Convierte mouse en mundo (si está sobre la imagen). nullopt si está fuera.
     std::optional<sf::Vector2f> ScreenToWorld(ImVec2 mouse, ImVec2 imgMin, ImVec2 imgMax) const;
 
     // Devuelve la entidad bajo worldPos (última dibujada primero)
     EntityID PickEntityAt(const sf::Vector2f& worldPos) const;
 
-    // Dibuja un rectángulo de selección sobre m_RT
+    // Dibujo auxiliar
     void DrawSelectionGizmo(sf::RenderTarget& rt) const;
+    void DrawGrid(sf::RenderTarget& rt) const;  // grilla visual
 };

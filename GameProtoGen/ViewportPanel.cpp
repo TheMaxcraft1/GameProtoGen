@@ -7,7 +7,7 @@
 #include <imgui-SFML.h>
 #include <optional>
 #include <cmath>
-#include <algorithm> // std::clamp
+#include <algorithm>
 
 static inline void ClampDockedMinWidth(float minW) {
     if (ImGui::GetWindowWidth() < minW) {
@@ -33,7 +33,7 @@ void ViewportPanel::EnsureRT() {
             static_cast<float>(m_VirtH) * 0.5f));
         m_RT->setView(v);
 
-        // RT de presentación (para flip vertical)
+        // RT de presentación (para flip vertical al mostrar)
         m_PresentRT = std::make_unique<sf::RenderTexture>(sf::Vector2u{ m_VirtW, m_VirtH });
         m_PresentRT->setSmooth(true);
         sf::View pv;
@@ -48,29 +48,71 @@ void ViewportPanel::OnUpdate(const gp::Timestep& dt) {
     auto& ctx = SceneContext::Get();
     if (!ctx.scene) return;
 
-    // 1) Input jugador
-    // Pausar el control del jugador mientras arrastrás (evita que “pelee” con el drag)
-    if (!m_Dragging) {
+    if (m_Playing) {
+        // En play, simulamos (sin drag del editor)
         Systems::PlayerControllerSystem::Update(*ctx.scene, dt.dt);
+        Systems::PhysicsSystem::Update(*ctx.scene, dt.dt);
+        Systems::CollisionSystem::SolveGround(*ctx.scene, /*groundY*/ m_VirtH);
+        Systems::CollisionSystem::SolveAABB(*ctx.scene);
     }
-
-    // 2) Física
-    Systems::PhysicsSystem::Update(*ctx.scene, dt.dt);
-
-    // 3) Colisiones (suelo plano + AABB con estáticos)
-    Systems::CollisionSystem::SolveGround(*ctx.scene, /*groundY*/ m_VirtH); // borde inferior del “mundo” 16:9
-    Systems::CollisionSystem::SolveAABB(*ctx.scene);
-
-    // (Si querés, podés hacer post-procesos aquí)
+    // En pausa: sin simulación (edición + pan)
 }
 
 void ViewportPanel::OnGuiRender() {
     auto& ctx = SceneContext::Get();
 
+    auto TogglePlay = [&]() {
+        m_Playing = !m_Playing;
+        m_Dragging = false;
+        m_DragEntity = 0;
+        m_Panning = false;
+        };
+
+    // Hotkey F5
+    if (ImGui::IsKeyPressed(ImGuiKey_F5)) TogglePlay();
+
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ClampDockedMinWidth(480.0f);
 
+    // ───────────────────────────────── Toolbar ─────────────────────────────────
+    const float TB_H = 40.f;
+    ImGui::BeginChild("##toolbar", ImVec2(0, TB_H), true, ImGuiWindowFlags_NoScrollbar);
+
+    // Play/Pause
+    if (m_Playing) {
+        if (ImGui::Button("Pause (F5)")) TogglePlay();
+    }
+    else {
+        if (ImGui::Button("Play  (F5)")) TogglePlay();
+    }
+    ImGui::SameLine(0.f, 12.f);
+
+    // Herramientas (deshabilitadas en Play)
+    ImGui::BeginDisabled(m_Playing);
+    {
+        bool selectActive = (m_Tool == Tool::Select);
+        bool panActive = (m_Tool == Tool::Pan);
+
+        if (ImGui::RadioButton("Select (1)", selectActive)) m_Tool = Tool::Select;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Pan (Q) (2)", panActive))   m_Tool = Tool::Pan;
+
+        // Hotkeys para cambiar herramienta (solo en pausa)
+        if (ImGui::IsKeyPressed(ImGuiKey_1)) m_Tool = Tool::Select;
+        if (ImGui::IsKeyPressed(ImGuiKey_2)) m_Tool = Tool::Pan;
+    }
+    ImGui::EndDisabled();
+
+    ImGui::SameLine(0.f, 24.f);
+    ImGui::TextUnformatted("|  Snap: ON  ");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(110.f);
+    ImGui::DragFloat("Grid", &m_Grid, 1.f, 4.f, 512.f, "%.0f");
+
+    ImGui::EndChild();
+
+    // ─────────────────────── Área disponible para el Viewport ─────────────────
     ImVec2 avail = ImGui::GetContentRegionAvail();
 
     float targetW = std::floor(avail.x > 1 ? avail.x : 1.0f);
@@ -86,44 +128,51 @@ void ViewportPanel::OnGuiRender() {
         // 1) Dibujar escena en RT principal
         m_RT->clear(sf::Color(30, 30, 35));
         if (ctx.scene) {
-            // Cámara
-            EntityID playerId = 0;
-            if (ctx.selected && ctx.scene->playerControllers.contains(ctx.selected.id)) {
-                playerId = ctx.selected.id;
-            }
-            else if (!ctx.scene->playerControllers.empty()) {
-                playerId = ctx.scene->playerControllers.begin()->first;
+            // --- Cámara ---
+            // En pausa: NO seguimos al player (queda el centro actual).
+            // En play: seguimos al player si existe.
+            sf::Vector2f desiredCenter = m_CamCenter;
+
+            if (m_Playing) {
+                EntityID playerId = 0;
+                if (ctx.selected && ctx.scene->playerControllers.contains(ctx.selected.id))
+                    playerId = ctx.selected.id;
+                else if (!ctx.scene->playerControllers.empty())
+                    playerId = ctx.scene->playerControllers.begin()->first;
+
+                if (playerId && ctx.scene->transforms.contains(playerId))
+                    desiredCenter = ctx.scene->transforms[playerId].position;
             }
 
-            sf::Vector2f camCenter{ static_cast<float>(m_VirtW) * 0.5f,
-                                    static_cast<float>(m_VirtH) * 0.5f };
-
-            if (playerId && ctx.scene->transforms.contains(playerId)) {
-                camCenter = ctx.scene->transforms[playerId].position;
-                //const float worldW = static_cast<float>(m_VirtW);
-                //const float worldH = static_cast<float>(m_VirtH);
-                //camCenter.x = std::clamp(camCenter.x, worldW * 0.5f, worldW - worldW * 0.5f);
-                //camCenter.y = std::clamp(camCenter.y, worldH * 0.5f, worldH - worldH * 0.5f);
-            }
+            // Si NO estamos arrastrando entidades ni paneando, actualizamos el centro
+            if (!m_Dragging && !m_Panning) m_CamCenter = desiredCenter;
 
             sf::View v = m_RT->getView();
-            v.setCenter(camCenter);
+            v.setCenter(m_CamCenter);
             m_RT->setView(v);
 
+            // Grilla debajo de todo
+            DrawGrid(*m_RT);
+
+            // Objetos
             Renderer2D::Draw(*ctx.scene, *m_RT);
-            DrawSelectionGizmo(*m_RT);
+
+            // Gizmo de selección SOLO en pausa
+            if (!m_Playing) {
+                DrawSelectionGizmo(*m_RT);
+            }
         }
         m_RT->display();
 
-        // 2) Espejar verticalmente en el RT de presentación
+        // 2) Espejo vertical a RT de presentación (solo visual)
         m_PresentRT->clear(sf::Color::Black);
         sf::Sprite spr(m_RT->getTexture());
-        spr.setScale(sf::Vector2f{ 1.f, -1.f });                  
-        spr.setPosition(sf::Vector2f{ 0.f, static_cast<float>(m_VirtH) });          
+        spr.setScale(sf::Vector2f{ 1.f, -1.f });
+        spr.setPosition(sf::Vector2f{ 0.f, static_cast<float>(m_VirtH) });
         m_PresentRT->draw(spr);
         m_PresentRT->display();
 
-        // 3) Letterboxing y muestra
+        // 3) Mostrar con letterboxing
         ImVec2 imgSize{ targetW, targetH };
         ImVec2 cur = ImGui::GetCursorPos();
         ImVec2 offset{ (avail.x - imgSize.x) * 0.5f, (avail.y - imgSize.y) * 0.5f };
@@ -133,66 +182,91 @@ void ViewportPanel::OnGuiRender() {
 
         ImGui::Image(m_PresentRT->getTexture(), imgSize);
 
-        // --- Picking & Drag ---
+        // --- Picking / Drag de entidades / Pan de cámara ---
         ImVec2 imgMin = ImGui::GetItemRectMin();
         ImVec2 imgMax = ImGui::GetItemRectMax();
         ImGuiIO& io = ImGui::GetIO();
 
-        if (ImGui::IsItemHovered()) {
-            if (auto worldOpt = ScreenToWorld(io.MousePos, imgMin, imgMax)) {
-                sf::Vector2f world = *worldOpt;
+        // PAN (herramienta Pan o Q + LMB) SOLO EN PAUSA — estable con MouseDelta
+        if (!m_Playing) {
+            const bool qDown = ImGui::IsKeyDown(ImGuiKey_Q);
+            const bool wantPan = (m_Tool == Tool::Pan && ImGui::IsMouseDown(ImGuiMouseButton_Left)) ||
+                (qDown && ImGui::IsMouseDown(ImGuiMouseButton_Left));
+            const bool hovered = ImGui::IsItemHovered();
 
-                // Click para seleccionar
-                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-                    EntityID id = PickEntityAt(world);
-                    auto& c = SceneContext::Get();
-                    if (c.scene && id) {
-                        c.selected = Entity{ id };
-                        m_Dragging = true;
-                        m_DragEntity = id;
-                        // offset desde el centro para arrastre “cómodo”
-                        m_DragOffset = c.scene->transforms[id].position - world;
-                    }
-                    else {
-                        c.selected = Entity{}; // nada seleccionado
-                    }
+            // Iniciar pan
+            if (!m_Panning && wantPan && hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                m_Panning = true;
+                m_Dragging = false;
+                m_DragEntity = 0;
+            }
+
+            // Actualizar pan
+            if (m_Panning) {
+                if (!wantPan || ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                    m_Panning = false; // terminar pan si soltás botón o dejás de presionar Q en su caso
                 }
+                else if (hovered) {
+                    // Convertir delta del mouse (pixeles ImGui) a pixeles del RT
+                    const float scaleX = static_cast<float>(m_VirtW) / (imgMax.x - imgMin.x);
+                    const float scaleY = static_cast<float>(m_VirtH) / (imgMax.y - imgMin.y);
+                    sf::Vector2f deltaRT{ io.MouseDelta.x * scaleX, io.MouseDelta.y * scaleY };
 
-                // Arrastre
-                if (m_Dragging && ImGui::IsMouseDown(ImGuiMouseButton_Left) && m_DragEntity) {
-                    auto& c2 = SceneContext::Get();
-                    if (c2.scene && c2.scene->transforms.contains(m_DragEntity)) {
-                        sf::Vector2f pos = world + m_DragOffset;
-                        if (m_EnableSnap && m_Grid > 0.0f) {
-                            pos.x = std::round(pos.x / m_Grid) * m_Grid;
-                            pos.y = std::round(pos.y / m_Grid) * m_Grid;
-                        }
-                        c2.scene->transforms[m_DragEntity].position = pos;
-
-                        if (c2.scene->physics.contains(m_DragEntity)) {
-                            auto& ph = c2.scene->physics[m_DragEntity];
-                            ph.velocity = { 0.f, 0.f };
-                            ph.onGround = false;
-                        }
-                    }
+                    // Mover cámara en dirección opuesta para “arrastrar el lienzo”
+                    m_CamCenter -= deltaRT;
                 }
             }
         }
 
-        // Soltar
-        if (m_Dragging && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-            m_Dragging = false;
-            m_DragEntity = 0;
-        }
+        // EDITAR ENTIDADES (solo en pausa, herramienta Select y si NO estamos paneando)
+        if (!m_Playing && m_Tool == Tool::Select && !m_Panning) {
+            if (ImGui::IsItemHovered()) {
+                if (auto worldOpt = ScreenToWorld(io.MousePos, imgMin, imgMax)) {
+                    sf::Vector2f world = *worldOpt;
 
-        // --- UI mini-overlay: Snap ---
-        ImGui::SetCursorPos(ImVec2(cur.x + 8.f, cur.y + 8.f)); // esquina sup-izq del área de contenido
-        ImGui::BeginChild("##vp_overlay", ImVec2(180, 70), true, ImGuiWindowFlags_NoScrollbar);
-        ImGui::Checkbox("Snap", &m_EnableSnap);
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(80.f);
-        ImGui::DragFloat("Grid", &m_Grid, 1.f, 1.f, 512.f, "%.0f");
-        ImGui::EndChild();
+                    // Click para seleccionar + comenzar drag
+                    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                        EntityID id = PickEntityAt(world);
+                        auto& c = SceneContext::Get();
+                        if (c.scene && id) {
+                            c.selected = Entity{ id };
+                            m_Dragging = true;
+                            m_DragEntity = id;
+                            m_DragOffset = c.scene->transforms[id].position - world; // offset cómodo
+                        }
+                        else {
+                            c.selected = Entity{};
+                        }
+                    }
+
+                    // Arrastre (Snap SIEMPRE ON)
+                    if (m_Dragging && ImGui::IsMouseDown(ImGuiMouseButton_Left) && m_DragEntity) {
+                        auto& c2 = SceneContext::Get();
+                        if (c2.scene && c2.scene->transforms.contains(m_DragEntity)) {
+                            sf::Vector2f pos = world + m_DragOffset;
+                            if (m_Grid > 0.0f) {
+                                pos.x = std::round(pos.x / m_Grid) * m_Grid;
+                                pos.y = std::round(pos.y / m_Grid) * m_Grid;
+                            }
+                            c2.scene->transforms[m_DragEntity].position = pos;
+
+                            // Si tiene física, lo frenamos
+                            if (c2.scene->physics.contains(m_DragEntity)) {
+                                auto& ph = c2.scene->physics[m_DragEntity];
+                                ph.velocity = { 0.f, 0.f };
+                                ph.onGround = false;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Soltar drag de entidad
+            if (m_Dragging && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                m_Dragging = false;
+                m_DragEntity = 0;
+            }
+        }
     }
     else {
         ImGui::TextUnformatted("Creando RenderTextures...");
@@ -205,27 +279,24 @@ void ViewportPanel::OnGuiRender() {
 std::optional<sf::Vector2f> ViewportPanel::ScreenToWorld(ImVec2 mouse, ImVec2 imgMin, ImVec2 imgMax) const {
     if (!m_RT) return std::nullopt;
 
-    // ¿está el mouse dentro del rectángulo de la imagen?
+    // ¿mouse dentro del rectángulo de la imagen?
     if (mouse.x < imgMin.x || mouse.y < imgMin.y || mouse.x > imgMax.x || mouse.y > imgMax.y)
         return std::nullopt;
 
-    // uv en [0..1] dentro de la imagen mostrada por ImGui
+    // uv [0..1] dentro de la imagen (flip visual ya manejado en presentación)
     ImVec2 imgSize{ imgMax.x - imgMin.x, imgMax.y - imgMin.y };
     float u = (mouse.x - imgMin.x) / imgSize.x;
     float v = (mouse.y - imgMin.y) / imgSize.y;
 
-    // píxel en la textura de presentación
-    int pxPresent = static_cast<int>(u * static_cast<float>(m_VirtW));
-    int pyPresent = static_cast<int>(v * static_cast<float>(m_VirtH));
+    // píxel en el RT
+    int pxRT = static_cast<int>(u * static_cast<float>(m_VirtW));
+    int pyRT = static_cast<int>(v * static_cast<float>(m_VirtH));
 
-    // convertir a píxel del RT original (flipeado verticalmente)
-    int pxRT = pxPresent;
-    int pyRT = static_cast<int>(m_VirtH) - 1 - pyPresent;
+    // Clamp
     if (pxRT < 0) pxRT = 0; if (pxRT >= static_cast<int>(m_VirtW)) pxRT = static_cast<int>(m_VirtW) - 1;
     if (pyRT < 0) pyRT = 0; if (pyRT >= static_cast<int>(m_VirtH)) pyRT = static_cast<int>(m_VirtH) - 1;
 
     // mapear a coords de mundo con la View actual del RT
-    // (SFML 3 mantiene mapPixelToCoords en RenderTarget)
     sf::Vector2f world = m_RT->mapPixelToCoords(sf::Vector2i{ pxRT, pyRT }, m_RT->getView());
     return world;
 }
@@ -241,7 +312,7 @@ EntityID ViewportPanel::PickEntityAt(const sf::Vector2f& worldPos) const {
 
         const auto& t = ctx.scene->transforms.at(id);
 
-        // half extents efectivos: Sprite.size primero; si no hay Sprite, usa Collider
+        // half extents efectivos
         sf::Vector2f he{ 0.f, 0.f };
         sf::Vector2f offset{ 0.f, 0.f };
 
@@ -256,7 +327,7 @@ EntityID ViewportPanel::PickEntityAt(const sf::Vector2f& worldPos) const {
             offset = itC->second.offset;
         }
         else {
-            continue; // nada para “pegarle”
+            continue;
         }
 
         sf::Vector2f center = t.position + offset;
@@ -296,10 +367,46 @@ void ViewportPanel::DrawSelectionGizmo(sf::RenderTarget& rt) const {
 
     sf::RectangleShape box;
     box.setSize(sf::Vector2f{ he.x * 2.f, he.y * 2.f });
-    box.setOrigin(he); // centrado
+    box.setOrigin(he);
     box.setPosition(t.position + offset);
     box.setFillColor(sf::Color(0, 0, 0, 0));
     box.setOutlineColor(sf::Color(255, 220, 80));
     box.setOutlineThickness(2.f);
     rt.draw(box);
+}
+
+void ViewportPanel::DrawGrid(sf::RenderTarget& rt) const {
+    if (m_Grid <= 0.0f) return;
+
+    const sf::View& view = rt.getView();
+    const sf::Vector2f c = view.getCenter();
+    const sf::Vector2f s = view.getSize();
+
+    const float left = c.x - s.x * 0.5f;
+    const float right = c.x + s.x * 0.5f;
+    const float top = c.y - s.y * 0.5f;
+    const float bottom = c.y + s.y * 0.5f;
+
+    const float startX = std::floor(left / m_Grid) * m_Grid;
+    const float startY = std::floor(top / m_Grid) * m_Grid;
+
+    const sf::Color minor(60, 60, 70, 255);
+    const sf::Color major(90, 90, 110, 255);
+
+    sf::VertexArray lines(sf::PrimitiveType::Lines);
+
+    for (float x = startX; x <= right + m_Grid; x += m_Grid) {
+        bool isMajor = (static_cast<int>(std::round(x / m_Grid)) % 10) == 0;
+        sf::Color col = isMajor ? major : minor;
+        lines.append(sf::Vertex(sf::Vector2f(x, top), col));
+        lines.append(sf::Vertex(sf::Vector2f(x, bottom), col));
+    }
+    for (float y = startY; y <= bottom + m_Grid; y += m_Grid) {
+        bool isMajor = (static_cast<int>(std::round(y / m_Grid)) % 10) == 0;
+        sf::Color col = isMajor ? major : minor;
+        lines.append(sf::Vertex(sf::Vector2f(left, y), col));
+        lines.append(sf::Vertex(sf::Vector2f(right, y), col));
+    }
+
+    rt.draw(lines);
 }
