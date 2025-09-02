@@ -4,6 +4,7 @@
 #include "Headers/PhysicsSystem.h"
 
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <imgui-SFML.h>
 #include <optional>
 #include <cmath>
@@ -16,6 +17,19 @@ static inline void ClampDockedMinWidth(float minW) {
 }
 
 ViewportPanel::ViewportPanel() {}
+
+void ViewportPanel::OnAttach() {
+    // Intentar cargar iconos desde Assets/Icons
+    m_IconPlayOK = m_IcoPlay.loadFromFile("Assets/Icons/play.png");
+    m_IconPauseOK = m_IcoPause.loadFromFile("Assets/Icons/pause.png");
+    m_IconSelectOK = m_IcoSelect.loadFromFile("Assets/Icons/select.png");
+    m_IconPanOK = m_IcoPan.loadFromFile("Assets/Icons/pan.png");
+
+    m_IcoPlay.setSmooth(true);
+    m_IcoPause.setSmooth(true);
+    m_IcoSelect.setSmooth(true);
+    m_IcoPan.setSmooth(true);
+}
 
 void ViewportPanel::EnsureRT() {
     const bool needRecreate =
@@ -55,7 +69,6 @@ void ViewportPanel::OnUpdate(const gp::Timestep& dt) {
         Systems::CollisionSystem::SolveGround(*ctx.scene, /*groundY*/ m_VirtH);
         Systems::CollisionSystem::SolveAABB(*ctx.scene);
     }
-    // En pausa: sin simulación (edición + pan)
 }
 
 void ViewportPanel::OnGuiRender() {
@@ -66,6 +79,7 @@ void ViewportPanel::OnGuiRender() {
         m_Dragging = false;
         m_DragEntity = 0;
         m_Panning = false;
+        // (en pausa, la cámara queda donde esté; no se sigue al player)
         };
 
     // Hotkey F5
@@ -75,30 +89,41 @@ void ViewportPanel::OnGuiRender() {
     ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ClampDockedMinWidth(480.0f);
 
-    // ───────────────────────────────── Toolbar ─────────────────────────────────
-    const float TB_H = 40.f;
-    ImGui::BeginChild("##toolbar", ImVec2(0, TB_H), true, ImGuiWindowFlags_NoScrollbar);
+    // ───────────────────────────── Toolbar ─────────────────────────────
+    const float TB_H = 44.f;
+    ImGui::BeginChild("##toolbar", ImVec2(0, TB_H), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
     // Play/Pause
-    if (m_Playing) {
-        if (ImGui::Button("Pause (F5)")) TogglePlay();
-    }
-    else {
-        if (ImGui::Button("Play  (F5)")) TogglePlay();
-    }
+    if (IconButtonPlayPause()) TogglePlay();
     ImGui::SameLine(0.f, 12.f);
 
     // Herramientas (deshabilitadas en Play)
     ImGui::BeginDisabled(m_Playing);
     {
-        bool selectActive = (m_Tool == Tool::Select);
-        bool panActive = (m_Tool == Tool::Pan);
+        // Select
+        {
+            ImGuiStyle& st = ImGui::GetStyle();
+            ImVec4 on = st.Colors[ImGuiCol_ButtonActive];
+            ImVec4 off = st.Colors[ImGuiCol_Button];
+            ImGui::PushStyleColor(ImGuiCol_Button, (m_Tool == Tool::Select) ? on : off);
+            bool pressed = IconButtonSelect(m_Tool == Tool::Select);
+            ImGui::PopStyleColor();
+            if (pressed) m_Tool = Tool::Select;
+            ImGui::SameLine();
+        }
 
-        if (ImGui::RadioButton("Select (1)", selectActive)) m_Tool = Tool::Select;
-        ImGui::SameLine();
-        if (ImGui::RadioButton("Pan (Q) (2)", panActive))   m_Tool = Tool::Pan;
+        // Pan
+        {
+            ImGuiStyle& st = ImGui::GetStyle();
+            ImVec4 on = st.Colors[ImGuiCol_ButtonActive];
+            ImVec4 off = st.Colors[ImGuiCol_Button];
+            ImGui::PushStyleColor(ImGuiCol_Button, (m_Tool == Tool::Pan) ? on : off);
+            bool pressed = IconButtonPan(m_Tool == Tool::Pan);
+            ImGui::PopStyleColor();
+            if (pressed) m_Tool = Tool::Pan;
+        }
 
-        // Hotkeys para cambiar herramienta (solo en pausa)
+        // Hotkeys (solo en pausa)
         if (ImGui::IsKeyPressed(ImGuiKey_1)) m_Tool = Tool::Select;
         if (ImGui::IsKeyPressed(ImGuiKey_2)) m_Tool = Tool::Pan;
     }
@@ -112,7 +137,7 @@ void ViewportPanel::OnGuiRender() {
 
     ImGui::EndChild();
 
-    // ─────────────────────── Área disponible para el Viewport ─────────────────
+    // ───────────────────────── Viewport area ───────────────────────────
     ImVec2 avail = ImGui::GetContentRegionAvail();
 
     float targetW = std::floor(avail.x > 1 ? avail.x : 1.0f);
@@ -128,39 +153,31 @@ void ViewportPanel::OnGuiRender() {
         // 1) Dibujar escena en RT principal
         m_RT->clear(sf::Color(30, 30, 35));
         if (ctx.scene) {
-            // --- Cámara ---
-            // En pausa: NO seguimos al player (queda el centro actual).
-            // En play: seguimos al player si existe.
+            // Cámara: en play sigue al player, en pausa se mantiene donde esté
             sf::Vector2f desiredCenter = m_CamCenter;
-
             if (m_Playing) {
                 EntityID playerId = 0;
                 if (ctx.selected && ctx.scene->playerControllers.contains(ctx.selected.id))
                     playerId = ctx.selected.id;
                 else if (!ctx.scene->playerControllers.empty())
                     playerId = ctx.scene->playerControllers.begin()->first;
-
                 if (playerId && ctx.scene->transforms.contains(playerId))
                     desiredCenter = ctx.scene->transforms[playerId].position;
             }
-
-            // Si NO estamos arrastrando entidades ni paneando, actualizamos el centro
             if (!m_Dragging && !m_Panning) m_CamCenter = desiredCenter;
 
             sf::View v = m_RT->getView();
             v.setCenter(m_CamCenter);
             m_RT->setView(v);
 
-            // Grilla debajo de todo
+            // Grilla
             DrawGrid(*m_RT);
 
             // Objetos
             Renderer2D::Draw(*ctx.scene, *m_RT);
 
             // Gizmo de selección SOLO en pausa
-            if (!m_Playing) {
-                DrawSelectionGizmo(*m_RT);
-            }
+            if (!m_Playing) DrawSelectionGizmo(*m_RT);
         }
         m_RT->display();
 
@@ -182,17 +199,26 @@ void ViewportPanel::OnGuiRender() {
 
         ImGui::Image(m_PresentRT->getTexture(), imgSize);
 
-        // --- Picking / Drag de entidades / Pan de cámara ---
+        // --- Picking / Drag / Pan ---
         ImVec2 imgMin = ImGui::GetItemRectMin();
         ImVec2 imgMax = ImGui::GetItemRectMax();
         ImGuiIO& io = ImGui::GetIO();
 
-        // PAN (herramienta Pan o Q + LMB) SOLO EN PAUSA — estable con MouseDelta
+        // PAN (herramienta Pan, o Q/Espacio + LMB) SOLO EN PAUSA — estable con MouseDelta
         if (!m_Playing) {
             const bool qDown = ImGui::IsKeyDown(ImGuiKey_Q);
-            const bool wantPan = (m_Tool == Tool::Pan && ImGui::IsMouseDown(ImGuiMouseButton_Left)) ||
-                (qDown && ImGui::IsMouseDown(ImGuiMouseButton_Left));
+            const bool spaceDown = ImGui::IsKeyDown(ImGuiKey_Space);
+            const bool panChord = qDown || spaceDown; // atajo temporal como Unity
             const bool hovered = ImGui::IsItemHovered();
+
+            // Cambiar cursor cuando hay contexto de pan (herramienta activa o atajo pulsado)
+            if (hovered && ((m_Tool == Tool::Pan) || panChord)) {
+                ImGui::SetMouseCursor(m_Panning ? ImGuiMouseCursor_ResizeAll : ImGuiMouseCursor_Hand);
+            }
+
+            const bool wantPan =
+                ((m_Tool == Tool::Pan) && ImGui::IsMouseDown(ImGuiMouseButton_Left)) ||
+                (panChord && ImGui::IsMouseDown(ImGuiMouseButton_Left));
 
             // Iniciar pan
             if (!m_Panning && wantPan && hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
@@ -204,16 +230,14 @@ void ViewportPanel::OnGuiRender() {
             // Actualizar pan
             if (m_Panning) {
                 if (!wantPan || ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-                    m_Panning = false; // terminar pan si soltás botón o dejás de presionar Q en su caso
+                    m_Panning = false;
                 }
                 else if (hovered) {
-                    // Convertir delta del mouse (pixeles ImGui) a pixeles del RT
+                    // Convertir delta ImGui -> RT
                     const float scaleX = static_cast<float>(m_VirtW) / (imgMax.x - imgMin.x);
                     const float scaleY = static_cast<float>(m_VirtH) / (imgMax.y - imgMin.y);
                     sf::Vector2f deltaRT{ io.MouseDelta.x * scaleX, io.MouseDelta.y * scaleY };
-
-                    // Mover cámara en dirección opuesta para “arrastrar el lienzo”
-                    m_CamCenter -= deltaRT;
+                    m_CamCenter -= deltaRT; // arrastrar lienzo
                 }
             }
         }
@@ -239,7 +263,7 @@ void ViewportPanel::OnGuiRender() {
                         }
                     }
 
-                    // Arrastre (Snap SIEMPRE ON)
+                    // Arrastre (Snap ON)
                     if (m_Dragging && ImGui::IsMouseDown(ImGuiMouseButton_Left) && m_DragEntity) {
                         auto& c2 = SceneContext::Get();
                         if (c2.scene && c2.scene->transforms.contains(m_DragEntity)) {
@@ -409,4 +433,87 @@ void ViewportPanel::DrawGrid(sf::RenderTarget& rt) const {
     }
 
     rt.draw(lines);
+}
+
+// ───────────────────────── Toolbar Icon Buttons ─────────────────────────
+
+// -- helper para ajustar altura manteniendo aspecto
+static ImVec2 FitIconHeight(const sf::Texture& tex, float btnH) {
+    const auto size = tex.getSize();
+    if (size.y == 0) return ImVec2(btnH, btnH);
+    float scale = btnH / static_cast<float>(size.y);
+    return ImVec2(size.x * scale, btnH);
+}
+
+// -- helper botón de ícono: usa InvisibleButton + Image (evita ImageButton)
+static bool IconButtonFromTexture(const char* id,
+    const sf::Texture& tex,
+    float height,
+    const char* tooltip,
+    bool toggled = false)
+{
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 posStart = ImGui::GetCursorScreenPos();
+    ImVec2 sz = FitIconHeight(tex, height);
+
+    // Zona clickeable
+    ImGui::InvisibleButton(id, ImVec2(sz.x, sz.y));
+    bool pressed = ImGui::IsItemClicked();
+    bool hovered = ImGui::IsItemHovered();
+    bool active = ImGui::IsItemActive();
+
+    // Dibujar el ícono encima de la misma zona
+    ImGui::SetCursorScreenPos(posStart);
+    ImGui::Image(tex, sz);              // <- wrapper de ImGui-SFML (esto sí compila)
+    // Restaurar cursor al final del botón (InvisibleButton ya avanzó el cursor)
+    ImGui::SetCursorScreenPos(ImVec2(posStart.x + sz.x, posStart.y));
+
+    // Marco visual en hover/activo/toggled
+    if (hovered || active || toggled) {
+        ImU32 col = ImGui::GetColorU32(active ? ImGuiCol_ButtonActive
+            : (toggled ? ImGuiCol_ButtonActive : ImGuiCol_ButtonHovered));
+        dl->AddRect(posStart, ImVec2(posStart.x + sz.x, posStart.y + sz.y), col, 6.0f, 0, 2.0f);
+    }
+
+    if (hovered && tooltip && *tooltip) ImGui::SetTooltip("%s", tooltip);
+    return pressed;
+}
+
+// ───────────────────────── Botones concretos ─────────────────────────
+
+bool ViewportPanel::IconButtonPlayPause() {
+    const float h = 28.f;
+    if (m_Playing ? m_IconPauseOK : m_IconPlayOK) {
+        const sf::Texture& tex = m_Playing ? m_IcoPause : m_IcoPlay;
+        return IconButtonFromTexture("##btn_play", tex, h, m_Playing ? "Pause (F5)" : "Play (F5)");
+    }
+    else {
+        bool pressed = ImGui::Button(m_Playing ? "Pause" : "Play", ImVec2(48, h));
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", m_Playing ? "Pause (F5)" : "Play (F5)");
+        return pressed;
+    }
+}
+
+bool ViewportPanel::IconButtonSelect(bool active) {
+    const float h = 28.f;
+    if (m_IconSelectOK) {
+        return IconButtonFromTexture("##btn_select", m_IcoSelect, h, "Seleccionar (1)", active);
+    }
+    else {
+        bool pressed = ImGui::Button("Select", ImVec2(56, h));
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", "Seleccionar (1)");
+        return pressed;
+    }
+}
+
+bool ViewportPanel::IconButtonPan(bool active) {
+    const float h = 28.f;
+    if (m_IconPanOK) {
+        return IconButtonFromTexture("##btn_pan", m_IcoPan, h, "Arrastrar (2)", active);
+    }
+    else {
+        bool pressed = ImGui::Button("Pan", ImVec2(44, h));
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", "Arrastrar (2)");
+        return pressed;
+    }
 }
