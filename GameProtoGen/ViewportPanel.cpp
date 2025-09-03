@@ -47,7 +47,7 @@ void ViewportPanel::EnsureRT() {
             static_cast<float>(m_VirtH) * 0.5f));
         m_RT->setView(v);
 
-        // RT de presentación (para flip vertical al mostrar)
+        // RT de presentación (flip vertical sólo visual)
         m_PresentRT = std::make_unique<sf::RenderTexture>(sf::Vector2u{ m_VirtW, m_VirtH });
         m_PresentRT->setSmooth(true);
         sf::View pv;
@@ -79,7 +79,7 @@ void ViewportPanel::OnGuiRender() {
         m_Dragging = false;
         m_DragEntity = 0;
         m_Panning = false;
-        // (en pausa, la cámara queda donde esté; no se sigue al player)
+        // En pausa la cámara queda fija (no sigue al player)
         };
 
     // Hotkey F5
@@ -91,39 +91,43 @@ void ViewportPanel::OnGuiRender() {
 
     // ───────────────────────────── Toolbar ─────────────────────────────
     const float TB_H = 44.f;
-    ImGui::BeginChild("##toolbar", ImVec2(0, TB_H), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::BeginChild("##toolbar", ImVec2(0, TB_H), true,
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
     // Play/Pause
     if (IconButtonPlayPause()) TogglePlay();
     ImGui::SameLine(0.f, 12.f);
 
+    // Pan temporal (Q o Espacio) - queremos que el botón Pan se vea activo mientras se mantiene
+    const bool panChord = (!m_Playing) && (ImGui::IsKeyDown(ImGuiKey_Q) || ImGui::IsKeyDown(ImGuiKey_Space));
+
     // Herramientas (deshabilitadas en Play)
     ImGui::BeginDisabled(m_Playing);
     {
-        // Select
+        ImGuiStyle& st = ImGui::GetStyle();
+        const ImVec4 on = st.Colors[ImGuiCol_ButtonActive];
+        const ImVec4 off = st.Colors[ImGuiCol_Button];
+
+        // Select (activo sólo si es la tool real y NO hay panChord)
         {
-            ImGuiStyle& st = ImGui::GetStyle();
-            ImVec4 on = st.Colors[ImGuiCol_ButtonActive];
-            ImVec4 off = st.Colors[ImGuiCol_Button];
-            ImGui::PushStyleColor(ImGuiCol_Button, (m_Tool == Tool::Select) ? on : off);
-            bool pressed = IconButtonSelect(m_Tool == Tool::Select);
+            const bool selectActive = (m_Tool == Tool::Select) && !panChord;
+            ImGui::PushStyleColor(ImGuiCol_Button, selectActive ? on : off);
+            bool pressed = IconButtonSelect(selectActive);
             ImGui::PopStyleColor();
             if (pressed) m_Tool = Tool::Select;
             ImGui::SameLine();
         }
 
-        // Pan
+        // Pan (activo si es la tool real o si hay panChord)
         {
-            ImGuiStyle& st = ImGui::GetStyle();
-            ImVec4 on = st.Colors[ImGuiCol_ButtonActive];
-            ImVec4 off = st.Colors[ImGuiCol_Button];
-            ImGui::PushStyleColor(ImGuiCol_Button, (m_Tool == Tool::Pan) ? on : off);
-            bool pressed = IconButtonPan(m_Tool == Tool::Pan);
+            const bool panActive = (m_Tool == Tool::Pan) || panChord;
+            ImGui::PushStyleColor(ImGuiCol_Button, panActive ? on : off);
+            bool pressed = IconButtonPan(panActive);
             ImGui::PopStyleColor();
             if (pressed) m_Tool = Tool::Pan;
         }
 
-        // Hotkeys (solo en pausa)
+        // Hotkeys (sólo en pausa)
         if (ImGui::IsKeyPressed(ImGuiKey_1)) m_Tool = Tool::Select;
         if (ImGui::IsKeyPressed(ImGuiKey_2)) m_Tool = Tool::Pan;
     }
@@ -181,7 +185,7 @@ void ViewportPanel::OnGuiRender() {
         }
         m_RT->display();
 
-        // 2) Espejo vertical a RT de presentación (solo visual)
+        // 2) Espejo vertical a RT de presentación (sólo visual)
         m_PresentRT->clear(sf::Color::Black);
         sf::Sprite spr(m_RT->getTexture());
         spr.setScale(sf::Vector2f{ 1.f, -1.f });
@@ -204,11 +208,8 @@ void ViewportPanel::OnGuiRender() {
         ImVec2 imgMax = ImGui::GetItemRectMax();
         ImGuiIO& io = ImGui::GetIO();
 
-        // PAN (herramienta Pan, o Q/Espacio + LMB) SOLO EN PAUSA — estable con MouseDelta
+        // PAN (herramienta Pan o panChord + LMB) SOLO EN PAUSA
         if (!m_Playing) {
-            const bool qDown = ImGui::IsKeyDown(ImGuiKey_Q);
-            const bool spaceDown = ImGui::IsKeyDown(ImGuiKey_Space);
-            const bool panChord = qDown || spaceDown; // atajo temporal como Unity
             const bool hovered = ImGui::IsItemHovered();
 
             // Cambiar cursor cuando hay contexto de pan (herramienta activa o atajo pulsado)
@@ -242,7 +243,7 @@ void ViewportPanel::OnGuiRender() {
             }
         }
 
-        // EDITAR ENTIDADES (solo en pausa, herramienta Select y si NO estamos paneando)
+        // EDITAR ENTIDADES (sólo en pausa, herramienta Select y si NO estamos paneando)
         if (!m_Playing && m_Tool == Tool::Select && !m_Panning) {
             if (ImGui::IsItemHovered()) {
                 if (auto worldOpt = ScreenToWorld(io.MousePos, imgMin, imgMax)) {
@@ -300,6 +301,8 @@ void ViewportPanel::OnGuiRender() {
     ImGui::PopStyleVar();
 }
 
+// --------------------------- Picking / utilidades ---------------------------
+
 std::optional<sf::Vector2f> ViewportPanel::ScreenToWorld(ImVec2 mouse, ImVec2 imgMin, ImVec2 imgMax) const {
     if (!m_RT) return std::nullopt;
 
@@ -336,7 +339,7 @@ EntityID ViewportPanel::PickEntityAt(const sf::Vector2f& worldPos) const {
 
         const auto& t = ctx.scene->transforms.at(id);
 
-        // half extents efectivos
+        // half extents efectivos (Sprite.size primero; si no hay, usa Collider)
         sf::Vector2f he{ 0.f, 0.f };
         sf::Vector2f offset{ 0.f, 0.f };
 
@@ -365,6 +368,8 @@ EntityID ViewportPanel::PickEntityAt(const sf::Vector2f& worldPos) const {
     }
     return 0;
 }
+
+// --------------------------- Gizmos / dibujo ---------------------------
 
 void ViewportPanel::DrawSelectionGizmo(sf::RenderTarget& rt) const {
     auto& ctx = SceneContext::Get();
@@ -437,7 +442,7 @@ void ViewportPanel::DrawGrid(sf::RenderTarget& rt) const {
 
 // ───────────────────────── Toolbar Icon Buttons ─────────────────────────
 
-// -- helper para ajustar altura manteniendo aspecto
+// helper: ajustar altura conservando aspecto
 static ImVec2 FitIconHeight(const sf::Texture& tex, float btnH) {
     const auto size = tex.getSize();
     if (size.y == 0) return ImVec2(btnH, btnH);
@@ -445,7 +450,7 @@ static ImVec2 FitIconHeight(const sf::Texture& tex, float btnH) {
     return ImVec2(size.x * scale, btnH);
 }
 
-// -- helper botón de ícono: usa InvisibleButton + Image (evita ImageButton)
+// helper: botón de icono (evita ImageButton) usando InvisibleButton + Image
 static bool IconButtonFromTexture(const char* id,
     const sf::Texture& tex,
     float height,
@@ -462,10 +467,10 @@ static bool IconButtonFromTexture(const char* id,
     bool hovered = ImGui::IsItemHovered();
     bool active = ImGui::IsItemActive();
 
-    // Dibujar el ícono encima de la misma zona
+    // Dibujar ícono en la zona
     ImGui::SetCursorScreenPos(posStart);
-    ImGui::Image(tex, sz);              // <- wrapper de ImGui-SFML (esto sí compila)
-    // Restaurar cursor al final del botón (InvisibleButton ya avanzó el cursor)
+    ImGui::Image(tex, sz); // wrapper de ImGui-SFML
+    // Colocar cursor al final del botón
     ImGui::SetCursorScreenPos(ImVec2(posStart.x + sz.x, posStart.y));
 
     // Marco visual en hover/activo/toggled
@@ -479,8 +484,7 @@ static bool IconButtonFromTexture(const char* id,
     return pressed;
 }
 
-// ───────────────────────── Botones concretos ─────────────────────────
-
+// Botones concretos
 bool ViewportPanel::IconButtonPlayPause() {
     const float h = 28.f;
     if (m_Playing ? m_IconPauseOK : m_IconPlayOK) {
@@ -489,7 +493,8 @@ bool ViewportPanel::IconButtonPlayPause() {
     }
     else {
         bool pressed = ImGui::Button(m_Playing ? "Pause" : "Play", ImVec2(48, h));
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", m_Playing ? "Pause (F5)" : "Play (F5)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", m_Playing ? "Pause (F5)" : "Play (F5)");
         return pressed;
     }
 }
@@ -509,11 +514,14 @@ bool ViewportPanel::IconButtonSelect(bool active) {
 bool ViewportPanel::IconButtonPan(bool active) {
     const float h = 28.f;
     if (m_IconPanOK) {
-        return IconButtonFromTexture("##btn_pan", m_IcoPan, h, "Arrastrar (2)", active);
+        return IconButtonFromTexture("##btn_pan", m_IcoPan, h,
+            "Arrastrar (2)",
+            active);
     }
     else {
         bool pressed = ImGui::Button("Pan", ImVec2(44, h));
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", "Arrastrar (2)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", "Arrastrar (2)");
         return pressed;
     }
 }
