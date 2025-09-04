@@ -6,6 +6,8 @@
 #include "Headers/SceneContext.h"
 #include "Headers/Scene.h"
 #include "Headers/Components.h"
+#include "Headers/ApiClient.h"
+#include "Headers/ChatPanel.h"
 
 class EditorApp : public gp::Application {
 public:
@@ -15,6 +17,9 @@ public:
         PushLayer(new ImGuiLayer(win));
         PushLayer(new ViewportPanel());
         PushLayer(new InspectorPanel());
+        auto client = std::make_shared<ApiClient>("127.0.0.1", 5199);
+        client->SetTimeouts(2, 5, 5); // opcional
+        PushLayer(new ChatPanel(client));
 
         // Semilla
         auto& ctx = SceneContext::Get();

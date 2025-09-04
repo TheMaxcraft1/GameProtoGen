@@ -76,6 +76,7 @@ void ImGuiLayer::OnGuiRender() {
         ImGuiID dock_right_id = ImGui::DockBuilderSplitNode(
             dock_main_id, ImGuiDir_Right, 0.30f, nullptr, &dock_main_id);
         ImGui::DockBuilderDockWindow("Inspector", dock_right_id);
+        ImGui::DockBuilderDockWindow("Chat", dock_right_id);
         ImGui::DockBuilderDockWindow("Viewport", dock_main_id);
         ImGui::DockBuilderFinish(dockspace_id);
     }

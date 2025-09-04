@@ -30,6 +30,13 @@ FetchContent_Declare(json
 )
 FetchContent_MakeAvailable(json)
 
+# ---------- cpp-httplib (header-only) ----------
+FetchContent_Declare(httplib
+  GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+  GIT_TAG v0.26.0
+)
+FetchContent_MakeAvailable(httplib)
+
 # ---------- Dear ImGui (rama docking) ----------
 FetchContent_Declare(imgui
   GIT_REPOSITORY https://github.com/ocornut/imgui.git
@@ -68,6 +75,8 @@ add_executable(GameProtoGen
     Renderer2D.cpp
     SceneSerializer.cpp
     PhysicsSystem.cpp
+    ApiClient.cpp
+    ChatPanel.cpp 
     Headers/ImGuiLayer.h
     Headers/SceneContext.h
     Headers/InspectorPanel.h
@@ -79,6 +88,8 @@ add_executable(GameProtoGen
     Headers/SceneSerializer.h
     Headers/PhysicsSystem.h
     Headers/SceneContext.h
+    Headers/ApiClient.h
+    Headers/ChatPanel.h
 )
 
 target_link_libraries(GameProtoGen PRIVATE
@@ -88,6 +99,16 @@ target_link_libraries(GameProtoGen PRIVATE
   ImGui-SFML::ImGui-SFML
   nlohmann_json::nlohmann_json
 )
+
+if (TARGET httplib::httplib)
+  target_link_libraries(GameProtoGen PRIVATE httplib::httplib)
+else()
+  target_include_directories(GameProtoGen PRIVATE ${httplib_SOURCE_DIR})
+endif()
+
+if (WIN32)
+  target_link_libraries(GameProtoGen PRIVATE ws2_32)
+endif()
 
 # Copia toda la carpeta Assets al directorio donde queda la .exe (Debug/Release)
 add_custom_command(TARGET GameProtoGen POST_BUILD
