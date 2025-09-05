@@ -101,5 +101,22 @@ void ChatPanel::ApplyOpsFromJson(const json& resp) {
                 }
             }
         }
+        else if (type == "remove_entity") {
+            uint32_t id = op.value("entity", 0u);
+            if (id && ctx.scene) ctx.scene->DestroyEntity(Entity{ id });
+        }
+        else if (type == "set_component") {
+            uint32_t id = op.value("entity", 0u);
+            std::string comp = op.value("component", "");
+            if (id && comp == "Sprite" && op.contains("value") && op["value"].contains("color")) {
+                auto c = op["value"]["color"];
+                if (ctx.scene->sprites.contains(id)) {
+                    ctx.scene->sprites[id].color = sf::Color(
+                        c.value("r", 255), c.value("g", 255),
+                        c.value("b", 255), c.value("a", 255)
+                    );
+                }
+            }
+        }
     }
 }
