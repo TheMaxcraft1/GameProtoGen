@@ -6,6 +6,33 @@
 #include <imgui-SFML.h>
 #include <imgui_internal.h>
 
+#include "Headers/SceneContext.h"
+#include "Headers/SceneSerializer.h"
+#include <filesystem>
+
+
+// Para files
+namespace {
+    const char* kProjPath = "Saves/project.json";
+
+    static void EnsureSavesDir() {
+        try {
+            std::filesystem::path p(kProjPath);
+            if (p.has_parent_path()) std::filesystem::create_directories(p.parent_path());
+        }
+        catch (...) {}
+    }
+    static void DoSave() {
+        EnsureSavesDir();
+        auto& ctx = SceneContext::Get();
+        if (ctx.scene) SceneSerializer::Save(*ctx.scene, kProjPath);
+    }
+    static void DoLoad() {
+        auto& ctx = SceneContext::Get();
+        if (ctx.scene) SceneSerializer::Load(*ctx.scene, kProjPath);
+    }
+}
+
 ImGuiLayer::ImGuiLayer(gp::SFMLWindow& window) : m_Window(window) {}
 
 void ImGuiLayer::OnAttach() {
@@ -56,12 +83,56 @@ void ImGuiLayer::OnGuiRender() {
     ImGuiWindowFlags hostFlags = ImGuiWindowFlags_NoDocking
         | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse
         | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
-        | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+        | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus
+        | ImGuiWindowFlags_MenuBar;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::Begin("###MainDockHost", nullptr, hostFlags);
     ImGui::PopStyleVar(2);
+
+    // ── Menú superior ───────────────────────────────────────────────────────
+    if (ImGui::BeginMenuBar()) {
+        if (ImGui::BeginMenu("Proyecto")) {
+            if (ImGui::MenuItem("Guardar", "Ctrl+S")) DoSave();
+            if (ImGui::MenuItem("Cargar", "Ctrl+O")) DoLoad();
+            ImGui::Separator();
+            if (ImGui::MenuItem("Salir", "Alt+F4")) {
+                gp::Application::Get().RequestClose();
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::EndMenuBar();
+    }
+
+    if (gp::Application::Get().WantsClose()) {
+        ImGui::OpenPopup("Guardar antes de salir");
+    }
+    if (ImGui::BeginPopupModal("Guardar antes de salir", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("¿Querés guardar los cambios antes de salir?");
+        ImGui::Separator();
+        if (ImGui::Button("Guardar y salir")) {
+            DoSave();
+            ImGui::CloseCurrentPopup();
+            gp::Application::Get().QuitNow();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Salir sin guardar")) {
+            ImGui::CloseCurrentPopup();
+            gp::Application::Get().QuitNow();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancelar")) {
+            ImGui::CloseCurrentPopup();
+            gp::Application::Get().CancelClose();
+        }
+        ImGui::EndPopup();
+    }
+
+    // Atajos de teclado globales
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) DoSave();
+    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false)) DoLoad();
 
     ImGuiID dockspace_id = ImGui::GetID("MainDockSpace");
     ImGui::DockSpace(dockspace_id, ImVec2(0, 0), 0);
@@ -84,3 +155,5 @@ void ImGuiLayer::OnGuiRender() {
 
     // ⚠️ No hagas Render aquí.
 }
+
+

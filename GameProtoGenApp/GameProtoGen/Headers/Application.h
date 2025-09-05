@@ -57,11 +57,24 @@ namespace gp {
         void PushLayer(Layer* layer);
         IWindow& Window() { return *m_Window; }
 
+        // NUEVO: singleton simple para que las layers puedan pedir salir
+        static Application& Get() { return *s_Instance; }
+
+        // NUEVO: flujo de cierre con confirmación
+        void RequestClose() { m_WantsClose = true; }
+        void CancelClose() { m_WantsClose = false; }
+        bool WantsClose() const { return m_WantsClose; }
+        void QuitNow() { m_Running = false; } // cierra el main loop
+
     private:
         bool m_Running = true;
+        bool m_WantsClose = false; // NUEVO
         IWindow* m_Window = nullptr;
         std::vector<Layer*> m_Layers;
         void OnEvent(const Event& e);
+
+        static Application* s_Instance; // NUEVO
     };
+
 
 } // namespace gp

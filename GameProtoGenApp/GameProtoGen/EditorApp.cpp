@@ -8,6 +8,9 @@
 #include "Headers/Components.h"
 #include "Headers/ApiClient.h"
 #include "Headers/ChatPanel.h"
+#include "Headers/SceneSerializer.h"
+#include <filesystem>
+
 
 class EditorApp : public gp::Application {
 public:
@@ -21,29 +24,43 @@ public:
         client->SetTimeouts(2, 5, 5); // opcional
         PushLayer(new ChatPanel(client));
 
-        // Semilla
+        // Semilla / Carga de proyecto
         auto& ctx = SceneContext::Get();
         ctx.scene = std::make_shared<Scene>();
-        auto e = ctx.scene->CreateEntity();
 
-        // Transform + Sprite
-        ctx.scene->transforms[e.id] = Transform{ {800.f, 450.f}, {1.f,1.f}, 0.f };
-        ctx.scene->sprites[e.id] = Sprite{ {80.f,120.f}, sf::Color(0,255,0,255) };
+        bool loaded = false;
+        const char* kProjPath = "Saves/project.json";
+        if (std::filesystem::exists(kProjPath)) {
+            loaded = SceneSerializer::Load(*ctx.scene, kProjPath);
+        }
 
-        // Collider (caja aprox al sprite)
-        ctx.scene->colliders[e.id] = Collider{ {40.f,60.f}, {0.f,0.f} };
+        // Si no se pudo cargar, semillamos una escena básica
+        if (!loaded) {
+            auto e = ctx.scene->CreateEntity();
 
-        // Physics + PlayerController
-        ctx.scene->physics[e.id] = Physics2D{};
-        ctx.scene->playerControllers[e.id] = PlayerController{ 500.f, 900.f };
+            // Transform + Sprite
+            ctx.scene->transforms[e.id] = Transform{ {800.f, 450.f}, {1.f,1.f}, 0.f };
+            ctx.scene->sprites[e.id] = Sprite{ {80.f,120.f}, sf::Color(0,255,0,255) };
 
-        ctx.selected = e;
+            // Collider (caja aprox al sprite)
+            ctx.scene->colliders[e.id] = Collider{ {40.f,60.f}, {0.f,0.f} };
 
-        // (Opcional) Agregá una “plataforma” estática:
-        auto ground = ctx.scene->CreateEntity();
-        ctx.scene->transforms[ground.id] = Transform{ {800.f, 820.f}, {1.f,1.f}, 0.f };
-        ctx.scene->sprites[ground.id] = Sprite{ {1600.f, 160.f}, sf::Color(60,60,70,255) };
-        ctx.scene->colliders[ground.id] = Collider{ {800.f, 80.f}, {0.f,0.f} };
+            // Physics + PlayerController
+            ctx.scene->physics[e.id] = Physics2D{};
+            ctx.scene->playerControllers[e.id] = PlayerController{ 500.f, 900.f };
+
+            ctx.selected = e;
+
+            // Plataforma “suelo”
+            auto ground = ctx.scene->CreateEntity();
+            ctx.scene->transforms[ground.id] = Transform{ {800.f, 820.f}, {1.f,1.f}, 0.f };
+            ctx.scene->sprites[ground.id] = Sprite{ {1600.f, 160.f}, sf::Color(60,60,70,255) };
+            ctx.scene->colliders[ground.id] = Collider{ {800.f, 80.f}, {0.f,0.f} };
+        }
+        else {
+            // Si cargó, limpiá selección
+            ctx.selected = {};
+        }
     }
 };
 

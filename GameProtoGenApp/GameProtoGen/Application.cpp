@@ -6,7 +6,10 @@
 
 namespace gp {
 
+    Application* Application::s_Instance = nullptr;
+
     Application::Application(const WindowProps& props) {
+        s_Instance = this;
         m_Window = CreateAppWindow(props);
         m_Window->SetEventCallback([this](const Event& e) { OnEvent(e); });
     }
@@ -49,7 +52,8 @@ namespace gp {
 
     void Application::OnEvent(const Event& e) {
         if (e.type == Event::Type::Closed) {
-            m_Running = false;
+            // En vez de salir ya, pedimos confirmación
+            m_WantsClose = true;
         }
         // más adelante podés propagar eventos a las layers si querés
     }

@@ -90,7 +90,8 @@ add_executable(GameProtoGen
     Headers/SceneContext.h
     Headers/ApiClient.h
     Headers/ChatPanel.h
-)
+    
+ )
 
 target_link_libraries(GameProtoGen PRIVATE
   SFML::Graphics
