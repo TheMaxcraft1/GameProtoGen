@@ -104,7 +104,6 @@ void ImGuiLayer::OnAttach() {
     EditorFonts::Regular = io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-Regular.ttf", 20.0f, nullptr, ranges);
 
     // H2 (título secciones) - Bold mediano
-    // Si no tenés Roboto-Bold.ttf, podés repetir Regular a mayor tamaño, pero no será "negrita" real.
     EditorFonts::H2 = io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-Bold.ttf", 22.0f, nullptr, ranges);
 
     // H1 (headers grandes) - Bold grande
@@ -141,9 +140,13 @@ void ImGuiLayer::OnGuiRender() {
     ImGui::Begin("###MainDockHost", nullptr, hostFlags);
     ImGui::PopStyleVar(2);
 
+    // Estado global de ejecución
+    const bool playing = SceneContext::Get().runtime.playing;
+
     // ── Menú superior ───────────────────────────────────────────────────────
     if (ImGui::BeginMenuBar()) {
-        if (ImGui::BeginMenu("Proyecto")) {
+        // Si playing==true, el menú queda gris y no se puede abrir
+        if (ImGui::BeginMenu("Proyecto", !playing)) {
             if (ImGui::MenuItem("Guardar", "Ctrl+S")) DoSave();
             if (ImGui::MenuItem("Cargar", "Ctrl+O")) DoLoad();
             ImGui::Separator();
@@ -179,20 +182,22 @@ void ImGuiLayer::OnGuiRender() {
         ImGui::EndPopup();
     }
 
-    // Atajos de teclado globales
+    // Atajos de teclado globales (solo en pausa)
     ImGuiIO& io = ImGui::GetIO();
-    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) DoSave();
-    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false)) DoLoad();
+    if (!playing) {
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) DoSave();
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false)) DoLoad();
+    }
 
     ImGuiID dockspace_id = ImGui::GetID("MainDockSpace");
     ImGui::DockSpace(dockspace_id, ImVec2(0, 0), 0);
 
     if (!m_BuiltDock) {
         m_BuiltDock = true;
-        ImGuiIO& io = ImGui::GetIO();
+        ImGuiIO& io2 = ImGui::GetIO();
         ImGui::DockBuilderRemoveNode(dockspace_id);
         ImGui::DockBuilderAddNode(dockspace_id, 0);
-        ImGui::DockBuilderSetNodeSize(dockspace_id, io.DisplaySize);
+        ImGui::DockBuilderSetNodeSize(dockspace_id, io2.DisplaySize);
         ImGuiID dock_main_id = dockspace_id;
         ImGuiID dock_right_id = ImGui::DockBuilderSplitNode(
             dock_main_id, ImGuiDir_Right, 0.30f, nullptr, &dock_main_id);
@@ -205,5 +210,3 @@ void ImGuiLayer::OnGuiRender() {
 
     // ⚠️ No hagas Render aquí.
 }
-
-

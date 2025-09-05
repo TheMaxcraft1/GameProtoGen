@@ -79,7 +79,8 @@ void ViewportPanel::OnGuiRender() {
         m_Dragging = false;
         m_DragEntity = 0;
         m_Panning = false;
-        // En pausa la cámara queda fija (no sigue al player)
+        // Reflejar estado global para que otras capas (menú, etc.) puedan reaccionar
+        SceneContext::Get().runtime.playing = m_Playing;
         };
 
     // Hotkey F5
