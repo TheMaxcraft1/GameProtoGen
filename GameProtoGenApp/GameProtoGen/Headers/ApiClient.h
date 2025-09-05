@@ -17,22 +17,24 @@ public:
         bool ok() const { return data.has_value() && error.empty(); }
     };
 
-    // Sync y Async
-    std::optional<nlohmann::json> SendCommand(const std::string& prompt, std::string* errMsg = nullptr);
-    std::future<Result> SendCommandAsync(std::string prompt);
+    // Ahora aceptamos también la escena (json) como contexto
+    std::optional<nlohmann::json> SendCommand(const std::string& prompt,
+        const nlohmann::json& scene,
+        std::string* errMsg = nullptr);
 
-    // Timeouts (segundos)
+    std::future<Result> SendCommandAsync(std::string prompt,
+        nlohmann::json scene);
+
     void SetTimeouts(int connectSec, int readSec, int writeSec) {
         m_ConnectTimeoutSec = connectSec; m_ReadTimeoutSec = readSec; m_WriteTimeoutSec = writeSec;
     }
 
-    // 👇 NUEVO: prefijo de ruta (ej. "/api" o "")
     void SetBasePath(std::string basePath) { m_BasePath = std::move(basePath); }
 
 private:
     std::string m_Host;
     int m_Port;
-    std::string m_BasePath = "/api"; // 👈 por defecto, porque usás [Route("api/[controller]")]
+    std::string m_BasePath = "/api";
 
     int m_ConnectTimeoutSec = 2;
     int m_ReadTimeoutSec = 5;

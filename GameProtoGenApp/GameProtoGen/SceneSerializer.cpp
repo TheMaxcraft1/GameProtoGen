@@ -13,7 +13,7 @@ static sf::Color color_from_json(const json& j) {
     return sf::Color(j.value("r", 255), j.value("g", 255), j.value("b", 255), j.value("a", 255));
 }
 
-bool SceneSerializer::Save(const Scene& scene, const std::string& path) {
+static json dump_impl(const Scene& scene) {
     json j;
     j["entities"] = json::array();
 
@@ -44,17 +44,14 @@ bool SceneSerializer::Save(const Scene& scene, const std::string& path) {
                 {"offset",      {c.offset.x, c.offset.y}}
             };
         }
-        // NUEVO: Physics2D
         if (auto it = scene.physics.find(id); it != scene.physics.end()) {
             const auto& p = it->second;
             je["Physics2D"] = {
                 {"velocity", {p.velocity.x, p.velocity.y}},
                 {"gravity", p.gravity},
                 {"gravityEnabled", p.gravityEnabled}
-                // onGround es estado runtime → no lo guardamos
             };
         }
-        // NUEVO: PlayerController
         if (auto it = scene.playerControllers.find(id); it != scene.playerControllers.end()) {
             const auto& pc = it->second;
             je["PlayerController"] = {
@@ -62,10 +59,13 @@ bool SceneSerializer::Save(const Scene& scene, const std::string& path) {
                 {"jumpSpeed", pc.jumpSpeed}
             };
         }
-
         j["entities"].push_back(je);
     }
+    return j;
+}
 
+bool SceneSerializer::Save(const Scene& scene, const std::string& path) {
+    json j = dump_impl(scene);
     std::ofstream ofs(path);
     if (!ofs) return false;
     ofs << j.dump(2);
@@ -81,7 +81,7 @@ bool SceneSerializer::Load(Scene& scene, const std::string& path) {
     scene = Scene{};
 
     for (auto& je : j["entities"]) {
-        // IMPORTANTE: no reasignar el id devuelto por CreateEntity()
+        // Creamos nueva entidad (MVP: no preservamos ID del JSON)
         Entity e = scene.CreateEntity();
         const EntityID id = e.id;
 
@@ -104,16 +104,63 @@ bool SceneSerializer::Load(Scene& scene, const std::string& path) {
             c.halfExtents = { jc["halfExtents"][0].get<float>(), jc["halfExtents"][1].get<float>() };
             c.offset = { jc["offset"][0].get<float>(), jc["offset"][1].get<float>() };
         }
-        // NUEVO: Physics2D
         if (je.contains("Physics2D")) {
             auto& p = scene.physics[id];
             auto jp = je["Physics2D"];
             p.velocity = { jp["velocity"][0].get<float>(), jp["velocity"][1].get<float>() };
             p.gravity = jp.value("gravity", 2000.f);
             p.gravityEnabled = jp.value("gravityEnabled", true);
-            p.onGround = false; // estado runtime
+            p.onGround = false;
         }
-        // NUEVO: PlayerController
+        if (je.contains("PlayerController")) {
+            auto& pc = scene.playerControllers[id];
+            auto jpc = je["PlayerController"];
+            pc.moveSpeed = jpc.value("moveSpeed", 500.f);
+            pc.jumpSpeed = jpc.value("jumpSpeed", 900.f);
+        }
+    }
+    return true;
+}
+
+nlohmann::json SceneSerializer::Dump(const Scene& scene) {
+    return dump_impl(scene);
+}
+
+bool SceneSerializer::LoadFromJson(Scene& scene, const nlohmann::json& j) {
+    if (!j.contains("entities") || !j["entities"].is_array()) return false;
+    // Versión en memoria equivalente a Load()
+    scene = Scene{};
+    for (auto& je : j["entities"]) {
+        Entity e = scene.CreateEntity();
+        const EntityID id = e.id;
+
+        if (je.contains("Transform")) {
+            auto& t = scene.transforms[id];
+            auto jt = je["Transform"];
+            t.position = { jt["position"][0].get<float>(), jt["position"][1].get<float>() };
+            t.scale = { jt["scale"][0].get<float>(), jt["scale"][1].get<float>() };
+            t.rotationDeg = jt["rotation"].get<float>();
+        }
+        if (je.contains("Sprite")) {
+            auto& s = scene.sprites[id];
+            auto js = je["Sprite"];
+            s.size = { js["size"][0].get<float>(), js["size"][1].get<float>() };
+            s.color = color_from_json(js["color"]);
+        }
+        if (je.contains("Collider")) {
+            auto& c = scene.colliders[id];
+            auto jc = je["Collider"];
+            c.halfExtents = { jc["halfExtents"][0].get<float>(), jc["halfExtents"][1].get<float>() };
+            c.offset = { jc["offset"][0].get<float>(), jc["offset"][1].get<float>() };
+        }
+        if (je.contains("Physics2D")) {
+            auto& p = scene.physics[id];
+            auto jp = je["Physics2D"];
+            p.velocity = { jp["velocity"][0].get<float>(), jp["velocity"][1].get<float>() };
+            p.gravity = jp.value("gravity", 2000.f);
+            p.gravityEnabled = jp.value("gravityEnabled", true);
+            p.onGround = false;
+        }
         if (je.contains("PlayerController")) {
             auto& pc = scene.playerControllers[id];
             auto jpc = je["PlayerController"];

@@ -3,7 +3,8 @@
 #include "Headers/SceneContext.h"
 #include "Headers/Scene.h"
 #include <imgui.h>
-#include <imgui_stdlib.h>   // 👈 habilita InputText(std::string&)
+#include <imgui_stdlib.h>
+#include "Headers/SceneSerializer.h"
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
@@ -24,7 +25,14 @@ void ChatPanel::OnGuiRender() {
         m_Status.clear();
         m_LastResponse.clear();
         m_Busy = true;
-        m_Fut = m_Client->SendCommandAsync(m_Input);
+
+        // 👇 NUEVO: dumpear la escena actual en JSON
+        auto& ctx = SceneContext::Get();
+        nlohmann::json sceneJson = ctx.scene ? SceneSerializer::Dump(*ctx.scene)
+            : nlohmann::json::object();
+
+        // 👇 NUEVO: enviar prompt + escena al backend
+        m_Fut = m_Client->SendCommandAsync(m_Input, sceneJson);
     }
     ImGui::EndDisabled();
 
@@ -57,6 +65,7 @@ void ChatPanel::OnGuiRender() {
 
     ImGui::End();
 }
+
 
 void ChatPanel::ApplyOpsFromJson(const json& resp) {
     if (!resp.contains("ops") || !resp["ops"].is_array()) return;
