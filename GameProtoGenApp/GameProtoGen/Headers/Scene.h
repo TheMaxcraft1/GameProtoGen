@@ -12,6 +12,9 @@ public:
     Entity CreateEntity();
     void DestroyEntity(Entity e);
 
+    // NUEVO: crear entidad con un ID específico (para restaurar desde JSON)
+    Entity CreateEntityWithId(EntityID id);
+
     // Component storage (MVP: maps por tipo)
     std::unordered_map<EntityID, Transform> transforms;
     std::unordered_map<EntityID, Sprite> sprites;

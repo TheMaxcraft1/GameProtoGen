@@ -6,12 +6,13 @@
 #include <imgui-SFML.h>
 #include <imgui_internal.h>
 
+#include "Headers/Components.h" 
 #include "Headers/SceneContext.h"
 #include "Headers/SceneSerializer.h"
 #include <filesystem>
 
 
-// Para files
+// Helpers Files/Proyecto
 namespace {
     const char* kProjPath = "Saves/project.json";
 
@@ -22,14 +23,63 @@ namespace {
         }
         catch (...) {}
     }
+
+    // Fallback post-load por si abrís un JSON viejo sin física/controlador
+    static void FixSceneAfterLoad() {
+        auto& ctx = SceneContext::Get();
+        if (!ctx.scene) return;
+        auto& sc = *ctx.scene;
+
+        // Suelo estático: si no hay ningún collider estático, crear uno
+        bool hasStaticCollider = false;
+        for (auto& [id, _] : sc.colliders) {
+            if (!sc.physics.contains(id)) { hasStaticCollider = true; break; }
+        }
+        if (!hasStaticCollider) {
+            auto ground = sc.CreateEntity();
+            sc.transforms[ground.id] = Transform{ {800.f, 820.f}, {1.f,1.f}, 0.f };
+            sc.sprites[ground.id] = Sprite{ {1600.f, 160.f}, sf::Color(60,60,70,255) };
+            sc.colliders[ground.id] = Collider{ {800.f, 80.f}, {0.f,0.f} }; // estático
+        }
+
+        // Jugador "jugable"
+        EntityID playerId = 0;
+        if (!sc.playerControllers.empty())
+            playerId = sc.playerControllers.begin()->first;
+
+        if (!playerId) {
+            // tomar una entidad existente con Transform, o crear una nueva
+            Entity chosen{};
+            for (auto& e : sc.Entities()) {
+                if (sc.transforms.contains(e.id)) { chosen = e; break; }
+            }
+            if (!chosen) {
+                chosen = sc.CreateEntity();
+                sc.transforms[chosen.id] = Transform{ {800.f, 450.f}, {1.f,1.f}, 0.f };
+                sc.sprites[chosen.id] = Sprite{ {80.f,120.f}, sf::Color(0,255,0,255) };
+                sc.colliders[chosen.id] = Collider{ {40.f,60.f}, {0.f,0.f} };
+            }
+            if (!sc.physics.contains(chosen.id)) sc.physics[chosen.id] = Physics2D{};
+            sc.playerControllers[chosen.id] = PlayerController{ 500.f, 900.f };
+            playerId = chosen.id;
+        }
+
+        ctx.selected = Entity{ playerId }; // para que la cámara lo siga en Play
+    }
+
     static void DoSave() {
         EnsureSavesDir();
         auto& ctx = SceneContext::Get();
         if (ctx.scene) SceneSerializer::Save(*ctx.scene, kProjPath);
     }
+
     static void DoLoad() {
         auto& ctx = SceneContext::Get();
-        if (ctx.scene) SceneSerializer::Load(*ctx.scene, kProjPath);
+        if (ctx.scene && std::filesystem::exists(kProjPath)) {
+            if (SceneSerializer::Load(*ctx.scene, kProjPath)) {
+                FixSceneAfterLoad(); // <- asegura jugador/suelo para escenas viejas
+            }
+        }
     }
 }
 

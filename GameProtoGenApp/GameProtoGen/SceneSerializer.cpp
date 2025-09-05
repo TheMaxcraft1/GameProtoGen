@@ -18,10 +18,11 @@ bool SceneSerializer::Save(const Scene& scene, const std::string& path) {
     j["entities"] = json::array();
 
     for (auto& e : scene.Entities()) {
+        const auto id = e.id;
         json je;
-        je["id"] = e.id;
+        je["id"] = id;
 
-        if (auto it = scene.transforms.find(e.id); it != scene.transforms.end()) {
+        if (auto it = scene.transforms.find(id); it != scene.transforms.end()) {
             const auto& t = it->second;
             je["Transform"] = {
                 {"position", {t.position.x, t.position.y}},
@@ -29,18 +30,36 @@ bool SceneSerializer::Save(const Scene& scene, const std::string& path) {
                 {"rotation", t.rotationDeg}
             };
         }
-        if (auto it = scene.sprites.find(e.id); it != scene.sprites.end()) {
+        if (auto it = scene.sprites.find(id); it != scene.sprites.end()) {
             const auto& s = it->second;
             je["Sprite"] = {
                 {"size",  {s.size.x, s.size.y}},
                 {"color", color_to_json(s.color)}
             };
         }
-        if (auto it = scene.colliders.find(e.id); it != scene.colliders.end()) {
+        if (auto it = scene.colliders.find(id); it != scene.colliders.end()) {
             const auto& c = it->second;
             je["Collider"] = {
                 {"halfExtents", {c.halfExtents.x, c.halfExtents.y}},
                 {"offset",      {c.offset.x, c.offset.y}}
+            };
+        }
+        // NUEVO: Physics2D
+        if (auto it = scene.physics.find(id); it != scene.physics.end()) {
+            const auto& p = it->second;
+            je["Physics2D"] = {
+                {"velocity", {p.velocity.x, p.velocity.y}},
+                {"gravity", p.gravity},
+                {"gravityEnabled", p.gravityEnabled}
+                // onGround es estado runtime → no lo guardamos
+            };
+        }
+        // NUEVO: PlayerController
+        if (auto it = scene.playerControllers.find(id); it != scene.playerControllers.end()) {
+            const auto& pc = it->second;
+            je["PlayerController"] = {
+                {"moveSpeed", pc.moveSpeed},
+                {"jumpSpeed", pc.jumpSpeed}
             };
         }
 
@@ -58,36 +77,48 @@ bool SceneSerializer::Load(Scene& scene, const std::string& path) {
     if (!ifs) return false;
     json j; ifs >> j;
 
-    // Reinicia escena simple (MVP): destruye y vuelve a crear
-    // (podrías limpiar mejor si lo necesitás)
-    for (auto& e : scene.Entities()) { /* no-op, MVP */ }
+    // Reiniciar escena
     scene = Scene{};
 
     for (auto& je : j["entities"]) {
+        // IMPORTANTE: no reasignar el id devuelto por CreateEntity()
         Entity e = scene.CreateEntity();
-        // respetar ID guardado (MVP: no re-map; si querés, ajustá m_Next)
-        if (je.contains("id")) {
-            e.id = je["id"].get<EntityID>();
-        }
+        const EntityID id = e.id;
 
         if (je.contains("Transform")) {
-            auto& t = scene.transforms[e.id];
+            auto& t = scene.transforms[id];
             auto jt = je["Transform"];
             t.position = { jt["position"][0].get<float>(), jt["position"][1].get<float>() };
             t.scale = { jt["scale"][0].get<float>(), jt["scale"][1].get<float>() };
             t.rotationDeg = jt["rotation"].get<float>();
         }
         if (je.contains("Sprite")) {
-            auto& s = scene.sprites[e.id];
+            auto& s = scene.sprites[id];
             auto js = je["Sprite"];
             s.size = { js["size"][0].get<float>(), js["size"][1].get<float>() };
             s.color = color_from_json(js["color"]);
         }
         if (je.contains("Collider")) {
-            auto& c = scene.colliders[e.id];
+            auto& c = scene.colliders[id];
             auto jc = je["Collider"];
             c.halfExtents = { jc["halfExtents"][0].get<float>(), jc["halfExtents"][1].get<float>() };
             c.offset = { jc["offset"][0].get<float>(), jc["offset"][1].get<float>() };
+        }
+        // NUEVO: Physics2D
+        if (je.contains("Physics2D")) {
+            auto& p = scene.physics[id];
+            auto jp = je["Physics2D"];
+            p.velocity = { jp["velocity"][0].get<float>(), jp["velocity"][1].get<float>() };
+            p.gravity = jp.value("gravity", 2000.f);
+            p.gravityEnabled = jp.value("gravityEnabled", true);
+            p.onGround = false; // estado runtime
+        }
+        // NUEVO: PlayerController
+        if (je.contains("PlayerController")) {
+            auto& pc = scene.playerControllers[id];
+            auto jpc = je["PlayerController"];
+            pc.moveSpeed = jpc.value("moveSpeed", 500.f);
+            pc.jumpSpeed = jpc.value("jumpSpeed", 900.f);
         }
     }
     return true;
