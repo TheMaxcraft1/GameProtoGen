@@ -21,10 +21,21 @@ namespace GameProtogenAPI.Services
         {
             // Prompt del "planner" (nano) en XML → devuelve <plan>...</plan>
             var system = """
-                Eres un analista de escenas 2D para un editor de niveles.
+                Eres un analista de escenas 2D de plataformas para un editor de niveles.
                 Interpreta el texto del usuario + la escena y devuelve SOLO un <plan> con
                 <agregar/>, <modificar/>, <eliminar/> (pueden estar vacíos).
                 Usa atributos simples (id, tipo, pos, tam, color), separa coords con coma.
+                Respecto a la posición, siempre usa múltiplos de 32.
+                
+                A la hora de crear plataformas ( a menos que el usuario diga lo contrario ):
+                - Ten en cuenta el "JumpForce" del jugador (entidad tipo "player").
+                - Ten en cuenta el "Gravity" de la escena (escena.gravity).
+                - Ten en cuenta la posición y tamaño de otras plataformas.
+                - Ten en cuenta la posición y tamaño ( ancho y largo ) del jugador (entidad tipo "player"). Crealas un poco más anchas que el jugador.
+                - Crea plataformas horizontales, no inclinadas.
+                - Ponlas separadas entre sí por un espacio horizontal de al menos 32 pixeles (no pegadas) y en distintas alturas.
+
+
                 No devuelvas nada fuera de <plan>...</plan>.
                 """;
 
@@ -52,12 +63,21 @@ namespace GameProtogenAPI.Services
                 </task>
                 """;
 
-            var completionResult = await _nano.CompleteChatAsync(
+#pragma warning disable OPENAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+            var options = new ChatCompletionOptions
+            {
+                ReasoningEffortLevel = ChatReasoningEffortLevel.Low
+            };
+#pragma warning restore OPENAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+
+
+            var completionResult = await _mini.CompleteChatAsync(
                 new List<ChatMessage>
                 {
                     new SystemChatMessage(system),
                     new UserChatMessage(user)
-                }
+                },
+                options
             );
 
             // 👇 FIX 1: con la sobrecarga async+ct, accedemos a .Value
@@ -80,20 +100,39 @@ namespace GameProtogenAPI.Services
             var system = """
                 Convierte el PLAN en una lista de operaciones JSON para un motor 2D.
                 SOLO responde un objeto JSON con raíz "ops".
-                Operaciones soportadas:
-                  - spawn_box: {"op":"spawn_box","pos":[x,y],"size":[w,h],"colorHex":"#RRGGBBAA"}
-                  - set_transform: {"op":"set_transform","entity":id, "position":[x,y]?, "scale":[sx,sy]?, "rotation":deg?}
-                  - remove_entity: {"op":"remove_entity","entity":id}
-                No incluyas texto adicional.
+
+                Operaciones soportadas (usa exactamente estos campos):
+                  - spawn_box:
+                    {"op":"spawn_box","pos":[x,y],"size":[w,h],"colorHex":"#RRGGBBAA"?}
+
+                  - set_transform:
+                    {"op":"set_transform","entity":id,"position":[x,y]?,"scale":[sx,sy]?,"rotation":deg?}
+
+                  - remove_entity:
+                    {"op":"remove_entity","entity":id}
+
+                  - set_component (para mutar datos de un componente existente, p.ej. color/tamaño del Sprite):
+                    // versión con un id:
+                    {"op":"set_component","component":"Sprite","entity":id,"value":{"colorHex":"#RRGGBBAA"}}
+                    // versión con múltiples ids:
+                    {"op":"set_component","component":"Sprite","entities":[id1,id2,...],"value":{"colorHex":"#RRGGBBAA"}}
+
+                Reglas:
+                - Para CAMBIAR COLORES EXISTENTES usa SIEMPRE set_component con component="Sprite".
+                - Convierte colores por nombre a colorHex
+                - Mantén los valores en múltiplos de 32 cuando muevas/ubiques plataformas.
+
+                Responde SOLO JSON. Sin texto adicional.
                 """;
 
-            var user = $"""
+                    var user = $"""
                 <plan>
                 {planXml}
                 </plan>
                 """;
 
-            // 👇 FIX 2: Structured Outputs con JSON Schema
+        
+            // JSON Schema que incluye set_component (acepta entity o entities)
             var schema = """
             {
               "type": "object",
@@ -106,7 +145,8 @@ namespace GameProtogenAPI.Services
                     "oneOf": [
                       { "$ref": "#/$defs/spawn_box" },
                       { "$ref": "#/$defs/set_transform" },
-                      { "$ref": "#/$defs/remove_entity" }
+                      { "$ref": "#/$defs/remove_entity" },
+                      { "$ref": "#/$defs/set_component" }
                     ]
                   }
                 }
@@ -119,6 +159,18 @@ namespace GameProtogenAPI.Services
                   "minItems": 2,
                   "maxItems": 2
                 },
+                "colorObj": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "r": { "type": "integer", "minimum": 0, "maximum": 255 },
+                    "g": { "type": "integer", "minimum": 0, "maximum": 255 },
+                    "b": { "type": "integer", "minimum": 0, "maximum": 255 },
+                    "a": { "type": "integer", "minimum": 0, "maximum": 255 }
+                  },
+                  "required": ["r","g","b"],
+                  "unevaluatedProperties": false
+                },
                 "spawn_box": {
                   "type": "object",
                   "additionalProperties": false,
@@ -126,10 +178,7 @@ namespace GameProtogenAPI.Services
                     "op": { "type": "string", "enum": ["spawn_box"] },
                     "pos": { "$ref": "#/$defs/vec2" },
                     "size": { "$ref": "#/$defs/vec2" },
-                    "colorHex": {
-                      "type": "string",
-                      "pattern": "^#([A-Fa-f0-9]{8}|[A-Fa-f0-9]{6})$"
-                    }
+                    "colorHex": { "type": "string", "pattern": "^#([A-Fa-f0-9]{8}|[A-Fa-f0-9]{6})$" }
                   },
                   "required": ["op","pos","size"]
                 },
@@ -153,34 +202,58 @@ namespace GameProtogenAPI.Services
                     "entity": { "type": "integer", "minimum": 1 }
                   },
                   "required": ["op","entity"]
+                },
+                "set_component": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "op": { "type": "string", "enum": ["set_component"] },
+                    "component": { "type": "string", "enum": ["Sprite"] },
+                    "entity": { "type": "integer", "minimum": 1 },
+                    "entities": {
+                      "type": "array",
+                      "items": { "type": "integer", "minimum": 1 },
+                      "minItems": 1,
+                      "uniqueItems": true
+                    },
+                    "value": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "colorHex": { "type": "string", "pattern": "^#([A-Fa-f0-9]{8}|[A-Fa-f0-9]{6})$" },
+                        "color": { "$ref": "#/$defs/colorObj" },
+                        "size": { "$ref": "#/$defs/vec2" }
+                      }
+                    }
+                  },
+                  "required": ["op","component","value"]
                 }
               }
             }
             """;
 
-#pragma warning disable OPENAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+#pragma warning disable OPENAI001
             var options = new ChatCompletionOptions
             {
                 ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
                     jsonSchemaFormatName: "ops_schema",
                     jsonSchema: BinaryData.FromString(schema),
-                    jsonSchemaIsStrict: false
+                    jsonSchemaIsStrict: false // dejar laxa: el modelo puede incluir entity o entities
                 ),
                 ReasoningEffortLevel = ChatReasoningEffortLevel.Low
             };
-#pragma warning restore OPENAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+#pragma warning restore OPENAI001
 
             var completionResult = await _mini.CompleteChatAsync(
                 new List<ChatMessage>
                 {
-                    new SystemChatMessage(system),
-                    new UserChatMessage(user)
+            new SystemChatMessage(system),
+            new UserChatMessage(user)
                 },
                 options,
                 ct
             );
 
-            // 👇 FIX 1 (igual que arriba)
             var completion = completionResult.Value;
             var json = completion.Content[0].Text?.Trim() ?? "";
 
