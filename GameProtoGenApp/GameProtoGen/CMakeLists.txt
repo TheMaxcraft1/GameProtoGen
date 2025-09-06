@@ -93,6 +93,10 @@ add_executable(GameProtoGen
     
  )
 
+ target_sources(GameProtoGen PRIVATE
+    ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
+)
+
 target_link_libraries(GameProtoGen PRIVATE
   SFML::Graphics
   SFML::Window
@@ -122,4 +126,5 @@ if (MSVC)
   add_compile_options("/utf-8")
 endif()
 
-target_include_directories(GameProtoGen PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Headers)
+target_include_directories(GameProtoGen PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Headers ${IMGUI_DIR}/misc/cpp)
+

@@ -1,16 +1,15 @@
 #include "Headers/ImGuiLayer.h"
 #include "Headers/SFMLWindow.h"
-#include "Headers/EditorFonts.h" 
+#include "Headers/EditorFonts.h"
 
 #include <imgui.h>
 #include <imgui-SFML.h>
 #include <imgui_internal.h>
 
-#include "Headers/Components.h" 
+#include "Headers/Components.h"
 #include "Headers/SceneContext.h"
 #include "Headers/SceneSerializer.h"
 #include <filesystem>
-
 
 // Helpers Files/Proyecto
 namespace {
@@ -30,7 +29,7 @@ namespace {
         if (!ctx.scene) return;
         auto& sc = *ctx.scene;
 
-        // Suelo estático: si no hay ningún collider estático, crear uno
+        // Suelo estático
         bool hasStaticCollider = false;
         for (auto& [id, _] : sc.colliders) {
             if (!sc.physics.contains(id)) { hasStaticCollider = true; break; }
@@ -39,16 +38,15 @@ namespace {
             auto ground = sc.CreateEntity();
             sc.transforms[ground.id] = Transform{ {800.f, 820.f}, {1.f,1.f}, 0.f };
             sc.sprites[ground.id] = Sprite{ {1600.f, 160.f}, sf::Color(60,60,70,255) };
-            sc.colliders[ground.id] = Collider{ {800.f, 80.f}, {0.f,0.f} }; // estático
+            sc.colliders[ground.id] = Collider{ {800.f, 80.f}, {0.f,0.f} };
         }
 
-        // Jugador "jugable"
+        // Jugador
         EntityID playerId = 0;
         if (!sc.playerControllers.empty())
             playerId = sc.playerControllers.begin()->first;
 
         if (!playerId) {
-            // tomar una entidad existente con Transform, o crear una nueva
             Entity chosen{};
             for (auto& e : sc.Entities()) {
                 if (sc.transforms.contains(e.id)) { chosen = e; break; }
@@ -64,7 +62,7 @@ namespace {
             playerId = chosen.id;
         }
 
-        ctx.selected = Entity{ playerId }; // para que la cámara lo siga en Play
+        ctx.selected = Entity{ playerId };
     }
 
     static void DoSave() {
@@ -77,11 +75,72 @@ namespace {
         auto& ctx = SceneContext::Get();
         if (ctx.scene && std::filesystem::exists(kProjPath)) {
             if (SceneSerializer::Load(*ctx.scene, kProjPath)) {
-                FixSceneAfterLoad(); // <- asegura jugador/suelo para escenas viejas
+                FixSceneAfterLoad();
             }
         }
     }
-}
+
+    // ----- Spawners ----------------------------------------------------
+    static Entity SpawnBox(Scene& scene,
+        const sf::Vector2f& pos,
+        const sf::Vector2f& size,
+        const sf::Color& color = sf::Color(255, 255, 255, 255)) {
+        Entity e = scene.CreateEntity();
+        scene.transforms[e.id] = Transform{ pos, {1.f,1.f}, 0.f };
+        scene.sprites[e.id] = Sprite{ size, color };
+        scene.colliders[e.id] = Collider{ { size.x * 0.5f, size.y * 0.5f }, {0.f,0.f} };
+        return e;
+    }
+
+    static Entity SpawnPlatform(Scene& scene,
+        const sf::Vector2f& pos,
+        const sf::Vector2f& size,
+        const sf::Color& color = sf::Color(255, 255, 255, 255)) {
+        Entity e = scene.CreateEntity();
+        scene.transforms[e.id] = Transform{ pos, {1.f,1.f}, 0.f };
+        scene.sprites[e.id] = Sprite{ size, color };
+        scene.colliders[e.id] = Collider{ { size.x * 0.5f, size.y * 0.5f }, {0.f,0.f} };
+        return e;
+    }
+
+    // ¿Es Player?
+    static bool IsPlayer(const Scene& scene, Entity e) {
+        return e && scene.playerControllers.contains(e.id);
+    }
+
+    // ----- Duplicar entidad (bloquea Player) ---------------------------
+    static Entity DuplicateEntity(Scene& scene, Entity src, const sf::Vector2f& offset = { 16.f, 16.f }) {
+        if (!src) return {};
+        if (IsPlayer(scene, src)) return {}; // ← no duplicar Player
+
+        Entity dst = scene.CreateEntity();
+
+        // Transform
+        if (auto it = scene.transforms.find(src.id); it != scene.transforms.end()) {
+            Transform t = it->second;
+            t.position += offset; // que no quede exactamente encima
+            scene.transforms[dst.id] = t;
+        }
+        // Sprite
+        if (auto it = scene.sprites.find(src.id); it != scene.sprites.end()) {
+            scene.sprites[dst.id] = it->second;
+        }
+        // Collider
+        if (auto it = scene.colliders.find(src.id); it != scene.colliders.end()) {
+            scene.colliders[dst.id] = it->second;
+        }
+        // Physics2D (velocidad reseteada)
+        if (auto it = scene.physics.find(src.id); it != scene.physics.end()) {
+            Physics2D p = it->second;
+            p.velocity = { 0.f, 0.f };
+            p.onGround = false;
+            scene.physics[dst.id] = p;
+        }
+        // PlayerController NO se copia (si existiera, ya bloqueamos arriba)
+
+        return dst;
+    }
+} // namespace
 
 ImGuiLayer::ImGuiLayer(gp::SFMLWindow& window) : m_Window(window) {}
 
@@ -97,19 +156,12 @@ void ImGuiLayer::OnAttach() {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
-    // ---------- Fuentes ----------
     const ImWchar* ranges = io.Fonts->GetGlyphRangesDefault();
 
-    // Regular (tamaño base del editor)
     EditorFonts::Regular = io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-Regular.ttf", 20.0f, nullptr, ranges);
-
-    // H2 (título secciones) - Bold mediano
     EditorFonts::H2 = io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-Bold.ttf", 22.0f, nullptr, ranges);
-
-    // H1 (headers grandes) - Bold grande
     EditorFonts::H1 = io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-Bold.ttf", 26.0f, nullptr, ranges);
 
-    // Fuente por defecto
     io.FontDefault = EditorFonts::Regular;
     ImGui::SFML::UpdateFontTexture();
 
@@ -123,7 +175,6 @@ void ImGuiLayer::OnUpdate(const gp::Timestep&) {
 }
 
 void ImGuiLayer::OnGuiRender() {
-    // Sólo DockSpace host
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->WorkPos);
     ImGui::SetNextWindowSize(vp->WorkSize);
@@ -140,12 +191,10 @@ void ImGuiLayer::OnGuiRender() {
     ImGui::Begin("###MainDockHost", nullptr, hostFlags);
     ImGui::PopStyleVar(2);
 
-    // Estado global de ejecución
     const bool playing = SceneContext::Get().runtime.playing;
 
     // ── Menú superior ───────────────────────────────────────────────────────
     if (ImGui::BeginMenuBar()) {
-        // Si playing==true, el menú queda gris y no se puede abrir
         if (ImGui::BeginMenu("Proyecto", !playing)) {
             if (ImGui::MenuItem("Guardar", "Ctrl+S")) DoSave();
             if (ImGui::MenuItem("Cargar", "Ctrl+O")) DoLoad();
@@ -155,6 +204,41 @@ void ImGuiLayer::OnGuiRender() {
             }
             ImGui::EndMenu();
         }
+
+        // Menú GameObjects
+        if (ImGui::BeginMenu("GameObjects", !playing)) {
+            if (ImGui::MenuItem("Crear cuadrado", "Ctrl+N")) {
+                auto& ctx = SceneContext::Get();
+                if (ctx.scene) {
+                    const sf::Vector2f spawnPos = ctx.cameraCenter;
+                    Entity e = SpawnBox(*ctx.scene, spawnPos, { 100.f, 100.f });
+                    ctx.selected = e;
+                }
+            }
+            if (ImGui::MenuItem("Crear plataforma", "Ctrl+N")) {
+                auto& ctx = SceneContext::Get();
+                if (ctx.scene) {
+                    const sf::Vector2f spawnPos = ctx.cameraCenter;
+                    Entity e = SpawnPlatform(*ctx.scene, spawnPos, { 200.f, 50.f });
+                    ctx.selected = e;
+                }
+            }
+
+            // Duplicar seleccionado (bloquea Player)
+            {
+                auto& ctx = SceneContext::Get();
+                const bool canDup = (ctx.scene && ctx.selected && !IsPlayer(*ctx.scene, ctx.selected));
+                ImGui::BeginDisabled(!canDup);
+                if (ImGui::MenuItem("Duplicar seleccionado", "Ctrl+D")) {
+                    Entity newE = DuplicateEntity(*ctx.scene, ctx.selected, { 16.f,16.f });
+                    if (newE) ctx.selected = newE;
+                }
+                ImGui::EndDisabled();
+            }
+
+            ImGui::EndMenu();
+        }
+
         ImGui::EndMenuBar();
     }
 
@@ -182,11 +266,38 @@ void ImGuiLayer::OnGuiRender() {
         ImGui::EndPopup();
     }
 
-    // Atajos de teclado globales (solo en pausa)
+    // Atajos teclado globales (en pausa)
     ImGuiIO& io = ImGui::GetIO();
     if (!playing) {
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) DoSave();
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false)) DoLoad();
+
+        // Crear nuevo cuadrado (en centro de cámara)
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_N, false)) {
+            auto& ctx = SceneContext::Get();
+            if (ctx.scene) {
+                Entity e = SpawnBox(*ctx.scene, ctx.cameraCenter, { 100.f, 100.f });
+                ctx.selected = e;
+            }
+        }
+
+        // Duplicar seleccionado (Ctrl + D) — bloquea Player
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D, false)) {
+            auto& ctx = SceneContext::Get();
+            if (ctx.scene && ctx.selected && !IsPlayer(*ctx.scene, ctx.selected)) {
+                Entity newE = DuplicateEntity(*ctx.scene, ctx.selected, { 16.f,16.f });
+                if (newE) ctx.selected = newE;
+            }
+        }
+
+        // Eliminar seleccionado (Supr) — bloquea Player
+        if (ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {
+            auto& ctx = SceneContext::Get();
+            if (ctx.scene && ctx.selected && !IsPlayer(*ctx.scene, ctx.selected)) {
+                ctx.scene->DestroyEntity(ctx.selected);
+                ctx.selected = {};
+            }
+        }
     }
 
     ImGuiID dockspace_id = ImGui::GetID("MainDockSpace");
@@ -207,6 +318,4 @@ void ImGuiLayer::OnGuiRender() {
         ImGui::DockBuilderFinish(dockspace_id);
     }
     ImGui::End();
-
-    // ⚠️ No hagas Render aquí.
 }

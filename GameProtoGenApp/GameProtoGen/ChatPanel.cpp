@@ -54,6 +54,34 @@ static sf::Color TryParseColor(const json& j, const sf::Color& fallback = sf::Co
 }
 // -------------------------------------------------------------------
 
+// ------------------------- helper entity id -------------------------
+static uint32_t GetEntityId(const nlohmann::json& j) {
+    if (!j.contains("entity") || j["entity"].is_null()) return 0;
+
+    const auto& v = j["entity"];
+    if (v.is_number_unsigned()) {
+        return v.get<uint32_t>();
+    }
+    if (v.is_number_integer()) {
+        int vi = v.get<int>();
+        return vi > 0 ? static_cast<uint32_t>(vi) : 0;
+    }
+    if (v.is_number_float()) {
+        double vf = v.get<double>();
+        return vf >= 0.0 ? static_cast<uint32_t>(std::round(vf)) : 0;
+    }
+    if (v.is_string()) {
+        try {
+            return static_cast<uint32_t>(std::stoul(v.get<std::string>()));
+        }
+        catch (...) {
+            return 0;
+        }
+    }
+    return 0;
+}
+// -------------------------------------------------------------------
+
 ChatPanel::ChatPanel(std::shared_ptr<ApiClient> client)
     : m_Client(std::move(client)) {
 }
@@ -127,7 +155,7 @@ void ChatPanel::ApplyOpsFromJson(const json& resp) {
             ctx.scene->colliders[e.id] = Collider{ {size[0].get<float>() * 0.5f, size[1].get<float>() * 0.5f}, {0.f,0.f} };
         }
         else if (type == "set_transform") {
-            uint32_t id = op.value("entity", 0u);
+            uint32_t id = GetEntityId(op);
             if (id && ctx.scene->transforms.contains(id)) {
                 auto& t = ctx.scene->transforms[id];
 
@@ -172,11 +200,11 @@ void ChatPanel::ApplyOpsFromJson(const json& resp) {
             }
         }
         else if (type == "remove_entity") {
-            uint32_t id = op.value("entity", 0u);
+            uint32_t id = GetEntityId(op);
             if (id && ctx.scene) ctx.scene->DestroyEntity(Entity{ id });
         }
         else if (type == "set_component") {
-            uint32_t id = op.value("entity", 0u);
+            uint32_t id = GetEntityId(op);
             std::string comp = op.value("component", "");
             if (id && comp == "Sprite" && ctx.scene->sprites.contains(id) && op.contains("value")) {
                 auto& sp = ctx.scene->sprites[id];
@@ -197,7 +225,7 @@ void ChatPanel::ApplyOpsFromJson(const json& resp) {
                     );
                 }
 
-                // NUEVO: tamaño por set_component
+                // tamaño por set_component
                 if (value.contains("size") && value["size"].is_array() && value["size"].size() >= 2) {
                     float w = std::max(1.f, value["size"][0].get<float>());
                     float h = std::max(1.f, value["size"][1].get<float>());

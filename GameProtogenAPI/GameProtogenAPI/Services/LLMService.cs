@@ -8,13 +8,15 @@ namespace GameProtogenAPI.Services
     {
         private readonly ChatClient _nano; // planner
         private readonly ChatClient _mini; // synthesizer
+        private readonly ILogger<LLMService> _logger;
 
-        public LLMService(ChatClient nano, ChatClient mini)
+        public LLMService(ChatClient nano, ChatClient mini, ILogger<LLMService> logger)
         {
             // Nota: el orden de registro en Program.cs hace que el primer ChatClient
             // inyectado sea el del nanoModel y el segundo el del miniModel.
             _nano = nano;
             _mini = mini;
+            _logger = logger;
         }
 
         public async Task<string> BuildEditPlanXmlAsync(string userPrompt, string sceneJson, CancellationToken ct = default)
@@ -83,6 +85,7 @@ namespace GameProtogenAPI.Services
             // 👇 FIX 1: con la sobrecarga async+ct, accedemos a .Value
             var completion = completionResult.Value;
             var text = completion.Content[0].Text?.Trim() ?? "";
+            _logger.LogInformation("PLAN response: {Text}", text);
 
             var plan = ExtractPlanXml(text);
             if (string.IsNullOrWhiteSpace(plan))
@@ -256,6 +259,7 @@ namespace GameProtogenAPI.Services
 
             var completion = completionResult.Value;
             var json = completion.Content[0].Text?.Trim() ?? "";
+            _logger.LogInformation("OPS response: {Json}", json);
 
             if (string.IsNullOrWhiteSpace(json) || !json.Contains("\"ops\""))
                 throw new InvalidOperationException("El MINI no devolvió JSON con 'ops'.");

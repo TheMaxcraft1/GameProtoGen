@@ -1,11 +1,15 @@
 #pragma once
 #include <memory>
+#include <SFML/System/Vector2.hpp>   // 👈 necesario para sf::Vector2f
 #include "Scene.h"
 #include "Entity.h"
 
 struct SceneContext {
     std::shared_ptr<Scene> scene;
     Entity selected{};
+
+    // Centro actual de la cámara (lo mantiene ViewportPanel)
+    sf::Vector2f cameraCenter{ 800.f, 450.f };
 
     // Estado de ejecución (simulación)
     struct RuntimeState {

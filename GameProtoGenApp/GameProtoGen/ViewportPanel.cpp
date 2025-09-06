@@ -47,6 +47,9 @@ void ViewportPanel::EnsureRT() {
             static_cast<float>(m_VirtH) * 0.5f));
         m_RT->setView(v);
 
+        // Publicamos un valor inicial del centro de cámara
+        SceneContext::Get().cameraCenter = m_CamCenter;
+
         // RT de presentación (flip vertical sólo visual)
         m_PresentRT = std::make_unique<sf::RenderTexture>(sf::Vector2u{ m_VirtW, m_VirtH });
         m_PresentRT->setSmooth(true);
@@ -174,6 +177,9 @@ void ViewportPanel::OnGuiRender() {
             sf::View v = m_RT->getView();
             v.setCenter(m_CamCenter);
             m_RT->setView(v);
+
+            // 👈 ACTUALIZAMOS cameraCenter CADA FRAME
+            SceneContext::Get().cameraCenter = m_CamCenter;
 
             // Grilla
             DrawGrid(*m_RT);
@@ -443,7 +449,6 @@ void ViewportPanel::DrawGrid(sf::RenderTarget& rt) const {
 
 // ───────────────────────── Toolbar Icon Buttons ─────────────────────────
 
-// helper: ajustar altura conservando aspecto
 static ImVec2 FitIconHeight(const sf::Texture& tex, float btnH) {
     const auto size = tex.getSize();
     if (size.y == 0) return ImVec2(btnH, btnH);
@@ -451,7 +456,6 @@ static ImVec2 FitIconHeight(const sf::Texture& tex, float btnH) {
     return ImVec2(size.x * scale, btnH);
 }
 
-// helper: botón de icono (evita ImageButton) usando InvisibleButton + Image
 static bool IconButtonFromTexture(const char* id,
     const sf::Texture& tex,
     float height,
@@ -462,19 +466,15 @@ static bool IconButtonFromTexture(const char* id,
     ImVec2 posStart = ImGui::GetCursorScreenPos();
     ImVec2 sz = FitIconHeight(tex, height);
 
-    // Zona clickeable
     ImGui::InvisibleButton(id, ImVec2(sz.x, sz.y));
     bool pressed = ImGui::IsItemClicked();
     bool hovered = ImGui::IsItemHovered();
     bool active = ImGui::IsItemActive();
 
-    // Dibujar ícono en la zona
     ImGui::SetCursorScreenPos(posStart);
-    ImGui::Image(tex, sz); // wrapper de ImGui-SFML
-    // Colocar cursor al final del botón
+    ImGui::Image(tex, sz);
     ImGui::SetCursorScreenPos(ImVec2(posStart.x + sz.x, posStart.y));
 
-    // Marco visual en hover/activo/toggled
     if (hovered || active || toggled) {
         ImU32 col = ImGui::GetColorU32(active ? ImGuiCol_ButtonActive
             : (toggled ? ImGuiCol_ButtonActive : ImGuiCol_ButtonHovered));
@@ -485,7 +485,6 @@ static bool IconButtonFromTexture(const char* id,
     return pressed;
 }
 
-// Botones concretos
 bool ViewportPanel::IconButtonPlayPause() {
     const float h = 28.f;
     if (m_Playing ? m_IconPauseOK : m_IconPlayOK) {

@@ -18,7 +18,7 @@ void InspectorPanel::OnGuiRender() {
     auto& ctx = SceneContext::Get();
 
     ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
-    ClampDockedMinWidth(360.0f);  // <--- mínimo real
+    ClampDockedMinWidth(360.0f);
 
     if (!ctx.selected) {
         ImGui::TextUnformatted("No hay entidad seleccionada.");
@@ -27,7 +27,49 @@ void InspectorPanel::OnGuiRender() {
     }
 
     const auto e = ctx.selected;
-    ImGui::Text("ID de Entidad: %u", e.id);
+    const bool playing = ctx.runtime.playing;
+    const bool isPlayer = (ctx.scene && ctx.scene->playerControllers.contains(e.id));
+
+    // ─────────────────────────────
+    // Fila: ID a la izquierda y botón "Eliminar" a la derecha (tipo justify-between)
+    // ─────────────────────────────
+    {
+        if (ImGui::BeginTable("tbl_header_row", 2, ImGuiTableFlags_SizingStretchProp)) {
+            ImGui::TableSetupColumn("left", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("right", ImGuiTableColumnFlags_WidthFixed, 100.f);
+
+            ImGui::TableNextRow();
+
+            // Columna izquierda: texto
+            ImGui::TableSetColumnIndex(0);
+            ImGui::Text("ID de Entidad: %u", e.id);
+
+            // Columna derecha: botón eliminar (alineado a la derecha de su celda)
+            ImGui::TableSetColumnIndex(1);
+            ImGui::BeginDisabled(playing || isPlayer);
+            bool doDelete = ImGui::Button("Eliminar", ImVec2(-FLT_MIN, 0));
+            ImGui::EndDisabled();
+
+            // Tooltips cuando está deshabilitado
+            if ((playing || isPlayer) && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                if (playing) ImGui::SetTooltip("Pausa (F5) para editar.");
+                else if (isPlayer) ImGui::SetTooltip("No se puede eliminar el Player.");
+            }
+
+            // Acción eliminar (solo si estaba habilitado)
+            if (doDelete) {
+                if (ctx.scene && ctx.selected && !isPlayer) {
+                    ctx.scene->DestroyEntity(ctx.selected);
+                    ctx.selected = {};
+                    ImGui::EndTable();
+                    ImGui::End();
+                    return;
+                }
+            }
+
+            ImGui::EndTable();
+        }
+    }
 
     if (ctx.scene) {
         // -------------------------
@@ -151,44 +193,36 @@ void InspectorPanel::OnGuiRender() {
         }
 
         // -------------------------
-        // Player / Jugador (detectado por presencia de PlayerController)
+        // Player / Jugador
         // -------------------------
-        {
-            // Si es jugador, exponer parámetros editables
-            if (ctx.scene->playerControllers.contains(e.id)) {
+        if (ctx.scene->playerControllers.contains(e.id)) {
+            ImGui::PushFont(EditorFonts::H1);
+            ImGui::SeparatorText("Jugador");
+            ImGui::PopFont();
 
-                ImGui::PushFont(EditorFonts::H1);
-                ImGui::SeparatorText("Jugador");
-                ImGui::PopFont();
+            auto& pc = ctx.scene->playerControllers[e.id];
 
-                auto& pc = ctx.scene->playerControllers[e.id];
+            ImGui::PushFont(EditorFonts::H2);
+            ImGui::TextUnformatted("Parámetros de control:");
+            ImGui::PopFont();
 
-                ImGui::PushFont(EditorFonts::H2);
-                ImGui::TextUnformatted("Parámetros de control:");
-                ImGui::PopFont();
+            if (ImGui::BeginTable("tbl_player", 2, ImGuiTableFlags_SizingStretchProp)) {
+                ImGui::TableSetupColumn("lbl", ImGuiTableColumnFlags_WidthFixed);
+                ImGui::TableSetupColumn("inp", ImGuiTableColumnFlags_WidthStretch);
 
-                if (ImGui::BeginTable("tbl_player", 2, ImGuiTableFlags_SizingStretchProp)) {
-                    ImGui::TableSetupColumn("lbl", ImGuiTableColumnFlags_WidthFixed);
-                    ImGui::TableSetupColumn("inp", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted("Speed Velocity");
+                ImGui::TableSetColumnIndex(1); ImGui::SetNextItemWidth(-FLT_MIN);
+                ImGui::DragFloat("##movespeed", &pc.moveSpeed, 5.f, 0.f, 5000.f, "%.1f");
 
-                    // Speed Velocity (moveSpeed)
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted("Speed Velocity");
-                    ImGui::TableSetColumnIndex(1); ImGui::SetNextItemWidth(-FLT_MIN);
-                    ImGui::DragFloat("##movespeed", &pc.moveSpeed, 5.f, 0.f, 5000.f, "%.1f");
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted("Jump Force");
+                ImGui::TableSetColumnIndex(1); ImGui::SetNextItemWidth(-FLT_MIN);
+                ImGui::DragFloat("##jumpspeed", &pc.jumpSpeed, 5.f, 0.f, 5000.f, "%.1f");
 
-                    // Jump Force (jumpSpeed). Nota: en tu física Y+ es hacia abajo,
-                    // el salto aplica -jumpSpeed, por eso aquí se edita como positivo.
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted("Jump Force");
-                    ImGui::TableSetColumnIndex(1); ImGui::SetNextItemWidth(-FLT_MIN);
-                    ImGui::DragFloat("##jumpspeed", &pc.jumpSpeed, 5.f, 0.f, 5000.f, "%.1f");
-
-                    ImGui::EndTable();
-                }
+                ImGui::EndTable();
             }
         }
-
     }
 
     ImGui::End();
