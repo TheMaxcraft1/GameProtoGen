@@ -56,7 +56,7 @@ std::future<ApiClient::Result> ApiClient::SendCommandAsync(std::string prompt,
             else r.error = "HTTP status " + std::to_string(res->status);
         }
         else {
-            r.error = "No response from server (can't connect to " + host + ":" + std::to_string(port) + ")";
+            r.error = "No response from server (can't connect to " + host + ":" + std::to_string(port) + ") or TIMEOUT";
         }
         return r;
         });

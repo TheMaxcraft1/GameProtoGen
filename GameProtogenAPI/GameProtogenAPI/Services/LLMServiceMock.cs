@@ -1,7 +1,5 @@
 ﻿using GameProtogenAPI.Services.Contracts;
-using System.Globalization;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
@@ -9,172 +7,215 @@ namespace GameProtogenAPI.Services
 {
     public class LLMServiceMock : ILLMService
     {
-        // Paso 1: user + escena → PLAN XML
         public Task<string> BuildEditPlanXmlAsync(string userPrompt, string sceneJson, CancellationToken ct = default)
         {
             var p = (userPrompt ?? string.Empty).ToLowerInvariant();
 
-            var agregar = new List<XElement>();
-            var modificar = new List<XElement>();
-            var eliminar = new List<XElement>();
+            bool wantsPlatform = p.Contains("plataforma") || p.Contains("platform") || p.Contains("box");
+            bool wantsMovePlayer = p.Contains("mover jugador") || p.Contains("move player");
+            uint? deleteId = TryMatchDeleteId(userPrompt);
+            string? colorHexInPrompt = TryMatchHexColor(userPrompt);
 
-            // Agregar plataforma / caja
-            if (p.Contains("plataforma") || p.Contains("platform") || p.Contains("box") || p.Contains("caja"))
-            {
-                agregar.Add(new XElement("item",
-                    new XAttribute("tipo", "plataforma"),
-                    new XAttribute("pos", "800,700"),
-                    new XAttribute("tam", "300,40"),
-                    new XAttribute("color", "#3C3C46FF")
-                ));
-            }
-
-            // Mover jugador
-            if (p.Contains("mover jugador") || p.Contains("move player"))
-            {
-                modificar.Add(new XElement("item",
-                    new XAttribute("id", "1"),
-                    new XAttribute("propiedad", "posicion"),
-                    new XAttribute("valor", "640,480")
-                ));
-            }
-
-            // Cambiar color (p. ej. "color #FF0000FF")
-            var mColor = Regex.Match(p, @"color\s*#([0-9a-f]{6,8})", RegexOptions.IgnoreCase);
-            if (mColor.Success)
-            {
-                modificar.Add(new XElement("item",
-                    new XAttribute("id", "1"),
-                    new XAttribute("propiedad", "color"),
-                    new XAttribute("valor", "#" + mColor.Groups[1].Value)
-                ));
-            }
-
-            // Eliminar N (p. ej. "eliminar 5" / "delete 5" / "borrar 5")
-            var mDel = Regex.Match(p, @"\b(eliminar|delete|borrar)\s+(\d+)\b", RegexOptions.IgnoreCase);
-            if (mDel.Success)
-            {
-                eliminar.Add(new XElement("item", new XAttribute("id", mDel.Groups[2].Value)));
-            }
+            bool hasAnyPlatform = SceneHasAnyWideFlatPlatform(sceneJson);
 
             var plan = new XElement("plan",
-                new XElement("agregar", agregar),
-                new XElement("modificar", modificar),
-                new XElement("eliminar", eliminar)
+                new XElement("agregar"),
+                new XElement("modificar"),
+                new XElement("eliminar")
             );
 
-            // Devolvemos XML compacto (sin saltos), tal como haría el NANO
-            return Task.FromResult(plan.ToString(SaveOptions.DisableFormatting));
+            // Agregar plataforma por defecto si se pidió y no hay ninguna
+            if (wantsPlatform && !hasAnyPlatform)
+            {
+                var item = new XElement("item",
+                    new XAttribute("tipo", "plataforma"),
+                    new XAttribute("pos", "800,700"),
+                    new XAttribute("tam", "300,40")
+                );
+                if (!string.IsNullOrWhiteSpace(colorHexInPrompt))
+                    item.SetAttributeValue("color", colorHexInPrompt);
+                plan.Element("agregar")!.Add(item);
+            }
+
+            // Mover jugador (id=1 en MVP)
+            if (wantsMovePlayer)
+            {
+                plan.Element("modificar")!.Add(
+                    new XElement("item",
+                        new XAttribute("id", "1"),
+                        new XAttribute("propiedad", "posicion"),
+                        new XAttribute("valor", "640,480"))
+                );
+            }
+
+            // Cambiar color del jugador si se dio un #hex
+            if (!string.IsNullOrWhiteSpace(colorHexInPrompt))
+            {
+                plan.Element("modificar")!.Add(
+                    new XElement("item",
+                        new XAttribute("id", "1"),
+                        new XAttribute("propiedad", "color"),
+                        new XAttribute("valor", colorHexInPrompt))
+                );
+            }
+
+            // Eliminar entidad
+            if (deleteId.HasValue)
+            {
+                plan.Element("eliminar")!.Add(
+                    new XElement("item",
+                        new XAttribute("id", deleteId.Value.ToString()))
+                );
+            }
+
+            var xml = plan.ToString(SaveOptions.DisableFormatting);
+            return Task.FromResult(xml);
         }
 
-        // Paso 2: PLAN XML → { "ops": [...] }
         public Task<string> PlanToOpsJsonAsync(string planXml, CancellationToken ct = default)
         {
-            var doc = XDocument.Parse(planXml);
-            var root = doc.Root ?? throw new InvalidOperationException("plan XML inválido");
             var ops = new List<object>();
+            var doc = XDocument.Parse(planXml);
 
-            // ---- agregar → spawn_box ----
-            foreach (var it in root.Element("agregar")?.Elements("item") ?? Enumerable.Empty<XElement>())
+            // agregar → spawn_box
+            foreach (var item in doc.Descendants("agregar").Descendants("item"))
             {
-                var tipo = it.Attribute("tipo")?.Value?.ToLowerInvariant();
+                string tipo = (string?)item.Attribute("tipo") ?? "";
                 if (tipo is "plataforma" or "caja" or "box")
                 {
-                    var pos = ParseVec2(it.Attribute("pos")?.Value);
-                    var tam = ParseVec2(it.Attribute("tam")?.Value);
-                    var color = it.Attribute("color")?.Value;
-
-                    if (pos is not null && tam is not null)
+                    if (TryParseVec2Attr(item, "pos", out var pos) && TryParseVec2Attr(item, "tam", out var tam))
                     {
-                        ops.Add(new { op = "spawn_box", pos, size = tam, colorHex = color });
-                    }
-                }
-            }
-
-            // ---- modificar → set_transform / set_component ----
-            foreach (var it in root.Element("modificar")?.Elements("item") ?? Enumerable.Empty<XElement>())
-            {
-                if (!uint.TryParse(it.Attribute("id")?.Value, out var id)) continue;
-                var prop = it.Attribute("propiedad")?.Value?.ToLowerInvariant();
-                var val = it.Attribute("valor")?.Value;
-
-                if (prop == "posicion")
-                {
-                    var v = ParseVec2(val);
-                    if (v is not null) ops.Add(new { op = "set_transform", entity = id, position = v });
-                }
-                else if (prop == "escala")
-                {
-                    var v = ParseVec2(val);
-                    if (v is not null) ops.Add(new { op = "set_transform", entity = id, scale = v });
-                }
-                else if (prop == "rotacion")
-                {
-                    if (TryParseFloat(val, out var rot))
-                        ops.Add(new { op = "set_transform", entity = id, rotation = rot });
-                }
-                else if (prop == "color")
-                {
-                    if (TryParseHexColor(val ?? string.Empty, out var rgba))
-                    {
-                        ops.Add(new
+                        var obj = new Dictionary<string, object?>
                         {
-                            op = "set_component",
-                            entity = id,
-                            component = "Sprite",
-                            value = new { color = new { r = rgba.r, g = rgba.g, b = rgba.b, a = rgba.a } }
-                        });
+                            ["op"] = "spawn_box",
+                            ["pos"] = pos,
+                            ["size"] = tam
+                        };
+                        var col = (string?)item.Attribute("color");
+                        if (!string.IsNullOrWhiteSpace(col)) obj["colorHex"] = col;
+                        ops.Add(obj);
                     }
                 }
             }
 
-            // ---- eliminar → remove_entity ----
-            foreach (var it in root.Element("eliminar")?.Elements("item") ?? Enumerable.Empty<XElement>())
+            // modificar → set_transform / set_component(Sprite.color)
+            foreach (var item in doc.Descendants("modificar").Descendants("item"))
             {
-                if (uint.TryParse(it.Attribute("id")?.Value, out var id))
-                    ops.Add(new { op = "remove_entity", entity = id });
+                if (!uint.TryParse((string?)item.Attribute("id"), out var id)) continue;
+                string prop = (string?)item.Attribute("propiedad") ?? "";
+                string? val = (string?)item.Attribute("valor");
+
+                if (prop == "posicion" && TryParseVec2Csv(val, out var pos))
+                {
+                    ops.Add(new { op = "set_transform", entity = id, position = pos });
+                }
+                else if (prop == "escala" && TryParseVec2Csv(val, out var sc))
+                {
+                    ops.Add(new { op = "set_transform", entity = id, scale = sc });
+                }
+                else if (prop == "rotacion" && float.TryParse(val, out var rot))
+                {
+                    ops.Add(new { op = "set_transform", entity = id, rotation = rot });
+                }
+                else if (prop == "color" && TryParseHexColor(val, out var rgba))
+                {
+                    ops.Add(new
+                    {
+                        op = "set_component",
+                        entity = id,
+                        component = "Sprite",
+                        value = new
+                        {
+                            color = new { r = rgba.r, g = rgba.g, b = rgba.b, a = rgba.a }
+                        }
+                    });
+                }
             }
 
-            var json = JsonSerializer.Serialize(new { ops }, new JsonSerializerOptions
+            // eliminar → remove_entity
+            foreach (var item in doc.Descendants("eliminar").Descendants("item"))
             {
-                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-            });
+                if (uint.TryParse((string?)item.Attribute("id"), out var id))
+                {
+                    ops.Add(new { op = "remove_entity", entity = id });
+                }
+            }
+
+            var json = JsonSerializer.Serialize(new { ops });
             return Task.FromResult(json);
         }
 
-        // ---------------- Helpers ----------------
+        // Helpers -----------------------------------------------------------
 
-        private static float[]? ParseVec2(string? s)
+        private static bool SceneHasAnyWideFlatPlatform(string sceneJson)
         {
-            if (string.IsNullOrWhiteSpace(s)) return null;
-            var parts = s.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length != 2) return null;
+            try
+            {
+                using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(sceneJson) ? "{}" : sceneJson);
+                if (!doc.RootElement.TryGetProperty("entities", out var ents) || ents.ValueKind != JsonValueKind.Array)
+                    return false;
 
-            if (TryParseFloat(parts[0], out var x) && TryParseFloat(parts[1], out var y))
-                return new[] { x, y };
-
-            return null;
+                foreach (var e in ents.EnumerateArray())
+                {
+                    if (e.TryGetProperty("Sprite", out var sp) &&
+                        sp.TryGetProperty("size", out var size) &&
+                        size.ValueKind == JsonValueKind.Array && size.GetArrayLength() == 2)
+                    {
+                        var w = size[0].GetSingle();
+                        var h = size[1].GetSingle();
+                        if (w >= 250 && h <= 60) return true;
+                    }
+                }
+            }
+            catch { }
+            return false;
         }
 
-        private static bool TryParseFloat(string? s, out float value)
+        private static uint? TryMatchDeleteId(string text)
         {
-            return float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+            if (string.IsNullOrWhiteSpace(text)) return null;
+            var m = Regex.Match(text, @"\b(eliminar|remove)\s+(\d+)\b", RegexOptions.IgnoreCase);
+            return m.Success && uint.TryParse(m.Groups[2].Value, out var id) ? id : null;
         }
 
-        // Acepta #RRGGBB o #RRGGBBAA; devuelve RGBA
-        private static bool TryParseHexColor(string hex, out (byte r, byte g, byte b, byte a) rgba)
+        private static string? TryMatchHexColor(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+            var m = Regex.Match(text, @"#([A-Fa-f0-9]{8}|[A-Fa-f0-9]{6})");
+            return m.Success ? m.Value : null;
+        }
+
+        private static bool TryParseVec2Attr(XElement el, string attr, out float[] vec2)
+            => TryParseVec2Csv((string?)el.Attribute(attr), out vec2);
+
+        private static bool TryParseVec2Csv(string? csv, out float[] vec2)
+        {
+            vec2 = Array.Empty<float>();
+            if (string.IsNullOrWhiteSpace(csv)) return false;
+            var parts = csv.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != 2) return false;
+            if (float.TryParse(parts[0], out var x) && float.TryParse(parts[1], out var y))
+            {
+                vec2 = new[] { x, y };
+                return true;
+            }
+            return false;
+        }
+
+        private static bool TryParseHexColor(string? hex, out (byte r, byte g, byte b, byte a) rgba)
         {
             rgba = (255, 255, 255, 255);
-            var h = hex.Trim();
+            if (string.IsNullOrWhiteSpace(hex)) return false;
+            string h = hex.Trim();
             if (h.StartsWith("#")) h = h[1..];
-            if (h.Length is not (6 or 8)) return false;
-
+            if (h.Length == 6) h += "FF"; // añadir alfa
+            if (h.Length != 8) return false;
             try
             {
                 byte r = Convert.ToByte(h.Substring(0, 2), 16);
                 byte g = Convert.ToByte(h.Substring(2, 2), 16);
                 byte b = Convert.ToByte(h.Substring(4, 2), 16);
-                byte a = (h.Length == 8) ? Convert.ToByte(h.Substring(6, 2), 16) : (byte)255;
+                byte a = Convert.ToByte(h.Substring(6, 2), 16);
                 rgba = (r, g, b, a);
                 return true;
             }

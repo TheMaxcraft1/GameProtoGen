@@ -23,7 +23,13 @@ namespace GameProtogenAPI.Controllers
             if (string.IsNullOrWhiteSpace(req.prompt))
                 return BadRequest(new { error = "prompt vacío" });
 
-            var sceneJson = string.IsNullOrWhiteSpace(req.scene) ? "{}" : req.scene;
+            // Si vino objeto, usamos su JSON crudo; sino "{}"
+            var sceneJson =
+                (req.scene.HasValue &&
+                 req.scene.Value.ValueKind != JsonValueKind.Undefined &&
+                 req.scene.Value.ValueKind != JsonValueKind.Null)
+                ? req.scene.Value.GetRawText()
+                : "{}";
 
             // 1) NANO → plan XML
             string planXml;

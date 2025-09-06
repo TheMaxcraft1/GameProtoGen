@@ -57,9 +57,7 @@ namespace GameProtogenAPI.Services
                 {
                     new SystemChatMessage(system),
                     new UserChatMessage(user)
-                },
-                new ChatCompletionOptions { Temperature = 0.2f },
-                ct
+                }
             );
 
             // 👇 FIX 1: con la sobrecarga async+ct, accedemos a .Value
@@ -99,9 +97,11 @@ namespace GameProtogenAPI.Services
             var schema = """
             {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "ops": {
                   "type": "array",
+                  "minItems": 0,
                   "items": {
                     "oneOf": [
                       { "$ref": "#/$defs/spawn_box" },
@@ -112,7 +112,6 @@ namespace GameProtogenAPI.Services
                 }
               },
               "required": ["ops"],
-              "additionalProperties": false,
               "$defs": {
                 "vec2": {
                   "type": "array",
@@ -122,8 +121,9 @@ namespace GameProtogenAPI.Services
                 },
                 "spawn_box": {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
-                    "op": { "const": "spawn_box" },
+                    "op": { "type": "string", "enum": ["spawn_box"] },
                     "pos": { "$ref": "#/$defs/vec2" },
                     "size": { "$ref": "#/$defs/vec2" },
                     "colorHex": {
@@ -131,29 +131,28 @@ namespace GameProtogenAPI.Services
                       "pattern": "^#([A-Fa-f0-9]{8}|[A-Fa-f0-9]{6})$"
                     }
                   },
-                  "required": ["op","pos","size"],
-                  "additionalProperties": false
+                  "required": ["op","pos","size"]
                 },
                 "set_transform": {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
-                    "op": { "const": "set_transform" },
+                    "op": { "type": "string", "enum": ["set_transform"] },
                     "entity": { "type": "integer", "minimum": 1 },
                     "position": { "$ref": "#/$defs/vec2" },
                     "scale": { "$ref": "#/$defs/vec2" },
                     "rotation": { "type": "number" }
                   },
-                  "required": ["op","entity"],
-                  "additionalProperties": false
+                  "required": ["op","entity"]
                 },
                 "remove_entity": {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
-                    "op": { "const": "remove_entity" },
+                    "op": { "type": "string", "enum": ["remove_entity"] },
                     "entity": { "type": "integer", "minimum": 1 }
                   },
-                  "required": ["op","entity"],
-                  "additionalProperties": false
+                  "required": ["op","entity"]
                 }
               }
             }
@@ -162,11 +161,10 @@ namespace GameProtogenAPI.Services
 #pragma warning disable OPENAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
             var options = new ChatCompletionOptions
             {
-                Temperature = 0f,
                 ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
                     jsonSchemaFormatName: "ops_schema",
                     jsonSchema: BinaryData.FromString(schema),
-                    jsonSchemaIsStrict: true
+                    jsonSchemaIsStrict: false
                 ),
                 ReasoningEffortLevel = ChatReasoningEffortLevel.Low
             };
