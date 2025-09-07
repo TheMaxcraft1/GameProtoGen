@@ -181,8 +181,8 @@ void ViewportPanel::OnGuiRender() {
             // 👈 ACTUALIZAMOS cameraCenter CADA FRAME
             SceneContext::Get().cameraCenter = m_CamCenter;
 
-            // Grilla
-            DrawGrid(*m_RT);
+            // Grilla SOLO en pausa/edición
+            if (!m_Playing) DrawGrid(*m_RT);
 
             // Objetos
             Renderer2D::Draw(*ctx.scene, *m_RT);

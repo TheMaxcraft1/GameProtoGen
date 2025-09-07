@@ -102,7 +102,7 @@ namespace GameProtogenAPI.Services
             // Prompt del "synthesizer" (mini): Plan XML → JSON { "ops": [...] }
             var system = """
                 Convierte el PLAN en una lista de operaciones JSON para un motor 2D.
-                SOLO responde un objeto JSON con raíz "ops".
+                Responde SOLO un objeto JSON con raíz "ops" (sin texto adicional).
 
                 Operaciones soportadas (usa exactamente estos campos):
                   - spawn_box:
@@ -115,123 +115,114 @@ namespace GameProtogenAPI.Services
                     {"op":"remove_entity","entity":id}
 
                   - set_component (para mutar datos de un componente existente, p.ej. color/tamaño del Sprite):
-                    // versión con un id:
-                    {"op":"set_component","component":"Sprite","entity":id,"value":{"colorHex":"#RRGGBBAA"}}
-                    // versión con múltiples ids:
-                    {"op":"set_component","component":"Sprite","entities":[id1,id2,...],"value":{"colorHex":"#RRGGBBAA"}}
+                    {"op":"set_component","component":"Sprite","entity":id,"value":{"colorHex":"#RRGGBBAA"|"color":{r,g,b,a}?,"size":[w,h]?}}
 
-                Reglas:
-                - Para CAMBIAR COLORES EXISTENTES usa SIEMPRE set_component con component="Sprite".
-                - Convierte colores por nombre a colorHex
-                - Mantén los valores en múltiplos de 32 cuando muevas/ubiques plataformas.
-
-                Responde SOLO JSON. Sin texto adicional.
+                REGLAS ESTRICTAS DE FORMATO:
+                - NUNCA uses "entities". NUNCA agrupes varios IDs en una sola operación.
+                - Si el plan menciona múltiples entidades, genera N operaciones separadas (una por entidad).
+                - Mantén los nombres de campos EXACTOS.
+                - Convierte cualquier color por nombre o formato RGBA a "colorHex" #RRGGBBAA.
+                - Cuando muevas/ubiques plataformas, si aplicara, usa múltiplos de 32.
+                - No incluyas comentarios, ni texto fuera del JSON.
                 """;
 
-                    var user = $"""
+            var user = $"""
                 <plan>
                 {planXml}
                 </plan>
                 """;
 
-        
+
             // JSON Schema que incluye set_component (acepta entity o entities)
             var schema = """
             {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
                 "ops": {
-                  "type": "array",
-                  "minItems": 0,
-                  "items": {
+                    "type": "array",
+                    "minItems": 0,
+                    "items": {
                     "oneOf": [
-                      { "$ref": "#/$defs/spawn_box" },
-                      { "$ref": "#/$defs/set_transform" },
-                      { "$ref": "#/$defs/remove_entity" },
-                      { "$ref": "#/$defs/set_component" }
+                        { "$ref": "#/$defs/spawn_box" },
+                        { "$ref": "#/$defs/set_transform" },
+                        { "$ref": "#/$defs/remove_entity" },
+                        { "$ref": "#/$defs/set_component" }
                     ]
-                  }
+                    }
                 }
-              },
-              "required": ["ops"],
-              "$defs": {
+                },
+                "required": ["ops"],
+                "$defs": {
                 "vec2": {
-                  "type": "array",
-                  "items": { "type": "number" },
-                  "minItems": 2,
-                  "maxItems": 2
+                    "type": "array",
+                    "items": { "type": "number" },
+                    "minItems": 2,
+                    "maxItems": 2
                 },
                 "colorObj": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
                     "r": { "type": "integer", "minimum": 0, "maximum": 255 },
                     "g": { "type": "integer", "minimum": 0, "maximum": 255 },
                     "b": { "type": "integer", "minimum": 0, "maximum": 255 },
                     "a": { "type": "integer", "minimum": 0, "maximum": 255 }
-                  },
-                  "required": ["r","g","b"],
-                  "unevaluatedProperties": false
+                    },
+                    "required": ["r","g","b"]
                 },
                 "spawn_box": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
                     "op": { "type": "string", "enum": ["spawn_box"] },
                     "pos": { "$ref": "#/$defs/vec2" },
                     "size": { "$ref": "#/$defs/vec2" },
                     "colorHex": { "type": "string", "pattern": "^#([A-Fa-f0-9]{8}|[A-Fa-f0-9]{6})$" }
-                  },
-                  "required": ["op","pos","size"]
+                    },
+                    "required": ["op","pos","size"]
                 },
                 "set_transform": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
                     "op": { "type": "string", "enum": ["set_transform"] },
                     "entity": { "type": "integer", "minimum": 1 },
                     "position": { "$ref": "#/$defs/vec2" },
                     "scale": { "$ref": "#/$defs/vec2" },
                     "rotation": { "type": "number" }
-                  },
-                  "required": ["op","entity"]
+                    },
+                    "required": ["op","entity"]
                 },
                 "remove_entity": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
                     "op": { "type": "string", "enum": ["remove_entity"] },
                     "entity": { "type": "integer", "minimum": 1 }
-                  },
-                  "required": ["op","entity"]
+                    },
+                    "required": ["op","entity"]
                 },
                 "set_component": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
                     "op": { "type": "string", "enum": ["set_component"] },
                     "component": { "type": "string", "enum": ["Sprite"] },
                     "entity": { "type": "integer", "minimum": 1 },
-                    "entities": {
-                      "type": "array",
-                      "items": { "type": "integer", "minimum": 1 },
-                      "minItems": 1,
-                      "uniqueItems": true
-                    },
                     "value": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "properties": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
                         "colorHex": { "type": "string", "pattern": "^#([A-Fa-f0-9]{8}|[A-Fa-f0-9]{6})$" },
                         "color": { "$ref": "#/$defs/colorObj" },
                         "size": { "$ref": "#/$defs/vec2" }
-                      }
+                        }
                     }
-                  },
-                  "required": ["op","component","value"]
+                    },
+                    "required": ["op","component","entity","value"]
                 }
-              }
+                }
             }
             """;
 
