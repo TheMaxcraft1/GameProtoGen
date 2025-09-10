@@ -82,8 +82,8 @@ void ViewportPanel::OnGuiRender() {
         m_Dragging = false;
         m_DragEntity = 0;
         m_Panning = false;
-        // Reflejar estado global para que otras capas (menú, etc.) puedan reaccionar
         SceneContext::Get().runtime.playing = m_Playing;
+        AppendLog(std::string("Runtime: ") + (m_Playing ? "Play" : "Pause"));
         };
 
     // Hotkey F5
@@ -102,7 +102,7 @@ void ViewportPanel::OnGuiRender() {
     if (IconButtonPlayPause()) TogglePlay();
     ImGui::SameLine(0.f, 12.f);
 
-    // Pan temporal (Q o Espacio) - queremos que el botón Pan se vea activo mientras se mantiene
+    // Pan temporal (Q o Espacio) - el botón Pan se ve activo mientras se mantiene
     const bool panChord = (!m_Playing) && (ImGui::IsKeyDown(ImGuiKey_Q) || ImGui::IsKeyDown(ImGuiKey_Space));
 
     // Herramientas (deshabilitadas en Play)
@@ -137,21 +137,22 @@ void ViewportPanel::OnGuiRender() {
     }
     ImGui::EndDisabled();
 
-    ImGui::SameLine(0.f, 24.f);
-    ImGui::TextUnformatted("|  Snap: ON  ");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(110.f);
-    ImGui::DragFloat("Grid", &m_Grid, 1.f, 4.f, 512.f, "%.0f");
+    // ✂️ Se quita el label "Snap: ON" y el control de Grid (DragFloat)
+    // (El snapping sigue activo con el valor de m_Grid)
 
     ImGui::EndChild();
 
     // ───────────────────────── Viewport area ───────────────────────────
     ImVec2 avail = ImGui::GetContentRegionAvail();
 
+    // Reservamos un alto fijo para la consola debajo (p. ej., 140 px)
+    const float consoleHeight = 140.f;
+    float availForImageY = std::max(0.0f, avail.y - consoleHeight - 6.0f); // 6px separación
+
     float targetW = std::floor(avail.x > 1 ? avail.x : 1.0f);
     float targetH = std::floor(targetW * 9.0f / 16.0f);
-    if (targetH > avail.y) {
-        targetH = std::floor(avail.y > 1 ? avail.y : 1.0f);
+    if (targetH > availForImageY) {
+        targetH = std::floor(availForImageY > 1 ? availForImageY : 1.0f);
         targetW = std::floor(targetH * 16.0f / 9.0f);
     }
 
@@ -203,7 +204,7 @@ void ViewportPanel::OnGuiRender() {
         // 3) Mostrar con letterboxing
         ImVec2 imgSize{ targetW, targetH };
         ImVec2 cur = ImGui::GetCursorPos();
-        ImVec2 offset{ (avail.x - imgSize.x) * 0.5f, (avail.y - imgSize.y) * 0.5f };
+        ImVec2 offset{ (avail.x - imgSize.x) * 0.5f, (availForImageY - imgSize.y) * 0.5f };
         if (offset.x < 0) offset.x = 0;
         if (offset.y < 0) offset.y = 0;
         ImGui::SetCursorPos(ImVec2(cur.x + offset.x, cur.y + offset.y));
@@ -265,13 +266,14 @@ void ViewportPanel::OnGuiRender() {
                             m_Dragging = true;
                             m_DragEntity = id;
                             m_DragOffset = c.scene->transforms[id].position - world; // offset cómodo
+                            AppendLog("Seleccionado entity id=" + std::to_string(id));
                         }
                         else {
                             c.selected = Entity{};
                         }
                     }
 
-                    // Arrastre (Snap ON)
+                    // Arrastre (Snap ON interno)
                     if (m_Dragging && ImGui::IsMouseDown(ImGuiMouseButton_Left) && m_DragEntity) {
                         auto& c2 = SceneContext::Get();
                         if (c2.scene && c2.scene->transforms.contains(m_DragEntity)) {
@@ -295,6 +297,14 @@ void ViewportPanel::OnGuiRender() {
 
             // Soltar drag de entidad
             if (m_Dragging && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                if (m_DragEntity) {
+                    auto& c3 = SceneContext::Get();
+                    if (c3.scene && c3.scene->transforms.contains(m_DragEntity)) {
+                        const auto p = c3.scene->transforms[m_DragEntity].position;
+                        AppendLog("Soltado entity id=" + std::to_string(m_DragEntity) +
+                            " en (" + std::to_string((int)p.x) + "," + std::to_string((int)p.y) + ")");
+                    }
+                }
                 m_Dragging = false;
                 m_DragEntity = 0;
             }
@@ -303,6 +313,12 @@ void ViewportPanel::OnGuiRender() {
     else {
         ImGui::TextUnformatted("Creando RenderTextures...");
     }
+
+    // Separación mínima antes de la consola
+    ImGui::Dummy(ImVec2(0, 6.0f));
+
+    // ───────────────────────── Consola ───────────────────────────
+    DrawConsole(/*height*/ 140.f);
 
     ImGui::End();
     ImGui::PopStyleVar();
@@ -524,4 +540,49 @@ bool ViewportPanel::IconButtonPan(bool active) {
             ImGui::SetTooltip("%s", "Arrastrar (2)");
         return pressed;
     }
+}
+
+// ───────────────────────── Consola ─────────────────────────
+
+void ViewportPanel::AppendLog(const std::string& line) {
+    m_Log.emplace_back(line);
+}
+
+void ViewportPanel::DrawConsole(float height) {
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
+    ImGui::BeginChild("##console", ImVec2(0, height), true, ImGuiWindowFlags_NoScrollbar);
+
+    // Barra de acciones
+    if (ImGui::Button("Limpiar")) {
+        m_Log.clear();
+    }
+    ImGui::SameLine();
+    ImGui::Checkbox("Desplazamiento automático", &m_AutoScroll);
+
+    ImGui::Separator();
+
+    // Área de scroll
+    ImGui::BeginChild("##console_scroller", ImVec2(0, -28), false, ImGuiWindowFlags_HorizontalScrollbar);
+    for (const auto& line : m_Log) {
+        ImGui::TextUnformatted(line.c_str());
+    }
+    if (m_AutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 2.0f) {
+        ImGui::SetScrollHereY(1.0f);
+    }
+    ImGui::EndChild();
+
+    // (Opcional) input para futuros comandos — por ahora sólo hace echo al log
+    ImGui::PushItemWidth(-1);
+    if (ImGui::InputText("##console_input", m_ConsoleInput, IM_ARRAYSIZE(m_ConsoleInput),
+        ImGuiInputTextFlags_EnterReturnsTrue))
+    {
+        if (m_ConsoleInput[0] != '\0') {
+            AppendLog(std::string("> ") + m_ConsoleInput);
+            m_ConsoleInput[0] = '\0';
+        }
+    }
+    ImGui::PopItemWidth();
+
+    ImGui::EndChild();
+    ImGui::PopStyleVar();
 }

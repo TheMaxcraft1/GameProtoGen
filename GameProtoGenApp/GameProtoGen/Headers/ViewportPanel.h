@@ -5,6 +5,8 @@
 #include <SFML/Graphics.hpp>
 #include <imgui.h>
 #include "Entity.h"
+#include <vector>
+#include <string>
 
 class ViewportPanel : public gp::Layer {
 public:
@@ -35,11 +37,16 @@ private:
     sf::Vector2f m_DragOffset{ 0.f, 0.f };
 
     sf::Vector2f m_CamCenter{ 800.f, 450.f };
-    float m_Grid = 32.f;          // snap/grilla
+    float m_Grid = 32.f;          // snap/grilla (sigue activo pero ya no se muestra en UI)
 
     // Iconos toolbar
     sf::Texture m_IcoPlay, m_IcoPause, m_IcoSelect, m_IcoPan;
     bool m_IconPlayOK = false, m_IconPauseOK = false, m_IconSelectOK = false, m_IconPanOK = false;
+
+    // ---------- Consola ----------
+    std::vector<std::string> m_Log;  // líneas
+    bool m_AutoScroll = true;
+    char m_ConsoleInput[256] = { 0 };  // opcional para futuros comandos
 
 private:
     void EnsureRT();
@@ -56,4 +63,8 @@ private:
     bool IconButtonPlayPause();
     bool IconButtonSelect(bool active);
     bool IconButtonPan(bool active);
+
+    // Consola
+    void AppendLog(const std::string& line);
+    void DrawConsole(float height); // dibuja la consola al final del panel
 };
