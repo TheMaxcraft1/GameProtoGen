@@ -1,6 +1,6 @@
-#include "Headers/SceneSerializer.h"
-#include "Headers/Scene.h"
-#include "Headers/Components.h"
+#include "SceneSerializer.h"
+#include "Scene.h"
+#include "Components.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
 

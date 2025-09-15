@@ -1,5 +1,5 @@
 #pragma once
-#include "Application.h"
+#include "Core/Application.h"
 #include <SFML/System/Clock.hpp>
 
 namespace gp { class SFMLWindow; }

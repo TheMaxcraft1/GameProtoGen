@@ -1,5 +1,5 @@
-#include "Headers/PhysicsSystem.h"
-#include "Headers/Components.h"
+#include "PhysicsSystem.h"
+#include "ECS/Components.h"
 #include <SFML/Window/Keyboard.hpp>
 #include <algorithm>   // std::clamp (si lo necesitás)
 #include <string>      // ← necesitabas esto si usabas std::string en helpers (ya lo quitamos)

@@ -1,6 +1,6 @@
-#include "Headers/Renderer2D.h"
-#include "Headers/Scene.h"
-#include "Headers/Components.h"
+#include "Renderer2D.h"
+#include "ECS/Scene.h"
+#include "ECS/Components.h"
 
 void Renderer2D::Draw(const Scene& scene, sf::RenderTarget& target) {
     // Recorremos entidades que tengan Transform + Sprite

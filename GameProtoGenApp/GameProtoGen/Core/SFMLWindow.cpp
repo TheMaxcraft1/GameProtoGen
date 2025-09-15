@@ -1,4 +1,4 @@
-#include "Headers/SFMLWindow.h"
+#include "SFMLWindow.h"
 
 #ifdef _WIN32
 #include <windows.h>

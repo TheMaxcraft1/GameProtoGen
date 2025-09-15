@@ -1,10 +1,10 @@
 // GameProtoGen/ChatPanel.cpp
-#include "Headers/ChatPanel.h"
-#include "Headers/SceneContext.h"
-#include "Headers/Scene.h"
+#include "ChatPanel.h"
+#include "Runtime/SceneContext.h"
+#include "ECS/Scene.h"
+#include "ECS/SceneSerializer.h"
 #include <imgui.h>
 #include <imgui_stdlib.h>
-#include "Headers/SceneSerializer.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cctype>

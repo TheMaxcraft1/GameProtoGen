@@ -1,7 +1,7 @@
 // GameProtoGen/Headers/ChatPanel.h
 #pragma once
-#include "Application.h"
-#include "ApiClient.h"
+#include "Core/Application.h"
+#include "Net/ApiClient.h"
 #include <memory>
 #include <string>
 #include <future>

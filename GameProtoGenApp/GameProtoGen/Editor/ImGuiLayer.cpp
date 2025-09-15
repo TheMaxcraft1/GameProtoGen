@@ -1,14 +1,13 @@
-#include "Headers/ImGuiLayer.h"
-#include "Headers/SFMLWindow.h"
-#include "Headers/EditorFonts.h"
+#include "ImGuiLayer.h"
+#include "Core/SFMLWindow.h"
+#include "EditorFonts.h"
+#include "ECS/Components.h"
+#include "ECS/SceneSerializer.h"
+#include "Runtime/SceneContext.h"
 
 #include <imgui.h>
 #include <imgui-SFML.h>
 #include <imgui_internal.h>
-
-#include "Headers/Components.h"
-#include "Headers/SceneContext.h"
-#include "Headers/SceneSerializer.h"
 #include <filesystem>
 
 // Helpers Files/Proyecto

@@ -65,31 +65,29 @@ FetchContent_MakeAvailable(imgui-sfml)
 
 # ---------- Tu ejecutable ----------
 add_executable(GameProtoGen
-    EditorApp.cpp
-    Application.cpp
-    SFMLWindow.cpp
-    ImGuiLayer.cpp
-    InspectorPanel.cpp
-    ViewportPanel.cpp
-    Scene.cpp
-    Renderer2D.cpp
-    SceneSerializer.cpp
-    PhysicsSystem.cpp
-    ApiClient.cpp
-    ChatPanel.cpp 
-    Headers/ImGuiLayer.h
-    Headers/SceneContext.h
-    Headers/InspectorPanel.h
-    Headers/ViewportPanel.h
-    Headers/Scene.h
-    Headers/Components.h
-    Headers/Renderer2D.h
-    Headers/Entity.h
-    Headers/SceneSerializer.h
-    Headers/PhysicsSystem.h
-    Headers/SceneContext.h
-    Headers/ApiClient.h
-    Headers/ChatPanel.h
+    Core/Application.cpp
+    Core/SFMLWindow.cpp
+
+    # ECS
+    ECS/Scene.cpp
+    ECS/SceneSerializer.cpp
+
+    # Systems
+    Systems/Renderer2D.cpp
+    Systems/PhysicsSystem.cpp
+
+    # Editor
+    Editor/EditorApp.cpp
+    Editor/ImGuiLayer.cpp
+    Editor/Panels/ViewportPanel.cpp
+    Editor/Panels/InspectorPanel.cpp
+    Editor/Panels/ChatPanel.cpp
+
+    # Net
+    Net/ApiClient.cpp
+
+    # ImGui extra
+    ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
     
  )
 
@@ -126,5 +124,8 @@ if (MSVC)
   add_compile_options("/utf-8")
 endif()
 
-target_include_directories(GameProtoGen PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Headers ${IMGUI_DIR}/misc/cpp)
+target_include_directories(GameProtoGen PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${IMGUI_DIR}/misc/cpp
+)
 

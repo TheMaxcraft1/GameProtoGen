@@ -1,7 +1,7 @@
-#include "Headers/ViewportPanel.h"
-#include "Headers/SceneContext.h"
-#include "Headers/Renderer2D.h"
-#include "Headers/PhysicsSystem.h"
+#include "ViewportPanel.h"
+#include "Runtime/SceneContext.h"
+#include "Systems/Renderer2D.h"
+#include "Systems/PhysicsSystem.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>

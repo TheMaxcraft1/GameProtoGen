@@ -1,7 +1,7 @@
-#include "Headers/InspectorPanel.h"
-#include "Headers/SceneContext.h"
-#include "Headers/Components.h"
-#include "Headers/EditorFonts.h"
+#include "InspectorPanel.h"
+#include "Runtime/SceneContext.h"
+#include "ECS/Components.h"
+#include "Editor/EditorFonts.h"
 
 #include <imgui.h>
 #include <cstdint>

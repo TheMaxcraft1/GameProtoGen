@@ -1,4 +1,4 @@
-#include "Headers/Scene.h"
+#include "Scene.h"
 
 Entity Scene::CreateEntity() {
     Entity e{ m_Next++ };

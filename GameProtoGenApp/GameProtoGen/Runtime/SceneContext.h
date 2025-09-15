@@ -1,8 +1,8 @@
 #pragma once
 #include <memory>
 #include <SFML/System/Vector2.hpp>   // 👈 necesario para sf::Vector2f
-#include "Scene.h"
-#include "Entity.h"
+#include "ECS/Scene.h"
+#include "ECS/Entity.h"
 
 struct SceneContext {
     std::shared_ptr<Scene> scene;

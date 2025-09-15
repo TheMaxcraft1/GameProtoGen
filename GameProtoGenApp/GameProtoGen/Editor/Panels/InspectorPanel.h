@@ -1,5 +1,5 @@
 #pragma once
-#include "Application.h"
+#include "Core/Application.h"
 
 class InspectorPanel : public gp::Layer {
 public:

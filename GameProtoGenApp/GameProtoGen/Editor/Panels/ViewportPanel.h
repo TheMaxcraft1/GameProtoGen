@@ -1,10 +1,10 @@
 #pragma once
-#include "Application.h"
+#include "Core/Application.h"
+#include "ECS/Entity.h"
 #include <memory>
 #include <optional>
 #include <SFML/Graphics.hpp>
 #include <imgui.h>
-#include "Entity.h"
 #include <vector>
 #include <string>
 

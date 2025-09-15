@@ -1,7 +1,7 @@
-#include "Headers/Application.h"
+#include "Application.h"
 #include <imgui.h>
 #include <imgui-SFML.h>
-#include "Headers/SFMLWindow.h"
+#include "SFMLWindow.h"
 #include <chrono>
 
 namespace gp {
