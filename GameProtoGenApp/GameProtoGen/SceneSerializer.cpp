@@ -81,8 +81,16 @@ bool SceneSerializer::Load(Scene& scene, const std::string& path) {
     scene = Scene{};
 
     for (auto& je : j["entities"]) {
-        // Creamos nueva entidad (MVP: no preservamos ID del JSON)
-        Entity e = scene.CreateEntity();
+        Entity e;
+        if (je.contains("id") && (je["id"].is_number_unsigned() || je["id"].is_number_integer())) {
+            // Tomamos el id del archivo y lo preservamos
+            const EntityID wanted = je["id"].get<EntityID>();
+            if (wanted > 0) e = scene.CreateEntityWithId(wanted);
+            else            e = scene.CreateEntity(); // fallback defensivo
+        }
+        else {
+            e = scene.CreateEntity(); // si no había id en el JSON
+        }
         const EntityID id = e.id;
 
         if (je.contains("Transform")) {
@@ -131,8 +139,18 @@ bool SceneSerializer::LoadFromJson(Scene& scene, const nlohmann::json& j) {
     // Versión en memoria equivalente a Load()
     scene = Scene{};
     for (auto& je : j["entities"]) {
-        Entity e = scene.CreateEntity();
+        Entity e;
+        if (je.contains("id") && (je["id"].is_number_unsigned() || je["id"].is_number_integer())) {
+            // Tomamos el id del archivo y lo preservamos
+            const EntityID wanted = je["id"].get<EntityID>();
+            if (wanted > 0) e = scene.CreateEntityWithId(wanted);
+            else            e = scene.CreateEntity(); // fallback defensivo
+        }
+        else {
+            e = scene.CreateEntity(); // si no había id en el JSON
+        }
         const EntityID id = e.id;
+
 
         if (je.contains("Transform")) {
             auto& t = scene.transforms[id];
