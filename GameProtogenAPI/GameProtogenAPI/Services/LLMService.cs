@@ -6,22 +6,17 @@ namespace GameProtogenAPI.Services
 {
     public class LLMService : ILLMService
     {
-        private readonly ChatClient _nano; // planner
-        private readonly ChatClient _mini; // synthesizer
+        private readonly ChatClient _mini;
         private readonly ILogger<LLMService> _logger;
 
-        public LLMService(ChatClient nano, ChatClient mini, ILogger<LLMService> logger)
+        public LLMService(ChatClient mini, ILogger<LLMService> logger)
         {
-            // Nota: el orden de registro en Program.cs hace que el primer ChatClient
-            // inyectado sea el del nanoModel y el segundo el del miniModel.
-            _nano = nano;
             _mini = mini;
             _logger = logger;
         }
 
         public async Task<string> BuildEditPlanXmlAsync(string userPrompt, string sceneJson, CancellationToken ct = default)
         {
-            // Prompt del "planner" (nano) en XML → devuelve <plan>...</plan>
             var system = """
                 Eres un analista de escenas 2D de plataformas para un editor de niveles.
                 Interpreta el texto del usuario + la escena y devuelve SOLO un <plan> con
@@ -89,7 +84,7 @@ namespace GameProtogenAPI.Services
 
             var plan = ExtractPlanXml(text);
             if (string.IsNullOrWhiteSpace(plan))
-                throw new InvalidOperationException("El NANO no devolvió un <plan> XML válido.");
+                throw new InvalidOperationException("El modelo no devolvió un <plan> XML válido.");
 
             // Validación básica de XML
             _ = XDocument.Parse(plan);
