@@ -30,12 +30,16 @@ FetchContent_Declare(json
 )
 FetchContent_MakeAvailable(json)
 
-# ---------- cpp-httplib (header-only) ----------
-FetchContent_Declare(httplib
-  GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-  GIT_TAG v0.26.0
+# ---------- cpr (async HTTP over libcurl) ----------
+set(CPR_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+# Si no tenés libcurl del sistema, esto compila uno embebido (más lento la primera vez).
+set(CPR_USE_SYSTEM_CURL OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(cpr
+  GIT_REPOSITORY https://github.com/libcpr/cpr.git
+  GIT_TAG 1.11.1
 )
-FetchContent_MakeAvailable(httplib)
+FetchContent_MakeAvailable(cpr)
 
 # ---------- Dear ImGui (rama docking) ----------
 FetchContent_Declare(imgui
@@ -101,17 +105,8 @@ target_link_libraries(GameProtoGen PRIVATE
   SFML::System
   ImGui-SFML::ImGui-SFML
   nlohmann_json::nlohmann_json
+  cpr::cpr
 )
-
-if (TARGET httplib::httplib)
-  target_link_libraries(GameProtoGen PRIVATE httplib::httplib)
-else()
-  target_include_directories(GameProtoGen PRIVATE ${httplib_SOURCE_DIR})
-endif()
-
-if (WIN32)
-  target_link_libraries(GameProtoGen PRIVATE ws2_32)
-endif()
 
 # Copia toda la carpeta Assets al directorio donde queda la .exe (Debug/Release)
 add_custom_command(TARGET GameProtoGen POST_BUILD
