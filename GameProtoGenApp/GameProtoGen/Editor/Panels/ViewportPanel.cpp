@@ -551,10 +551,16 @@ void ViewportPanel::AppendLog(const std::string& line) {
 }
 
 void ViewportPanel::DrawConsole(float height) {
+    // 🎨 Colores: header = #D1D1D1, contenido = #E3E3E3
+    const ImVec4 kHeaderBg = ImVec4(209.0f / 255.0f, 209.0f / 255.0f, 209.0f / 255.0f, 1.0f); // imagen
+    const ImVec4 kContentBg = ImVec4(227.0f / 255.0f, 227.0f / 255.0f, 227.0f / 255.0f, 1.0f); // un poco más claro
+
+    // Child contenedor (header + scroller) con fondo de header
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, kHeaderBg);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
     ImGui::BeginChild("##console", ImVec2(0, height), true, ImGuiWindowFlags_NoScrollbar);
 
-    // Barra de acciones
+    // ───────────── Barra de acciones ─────────────
     if (ImGui::Button("Limpiar")) {
         s_Log.clear();
     }
@@ -563,7 +569,9 @@ void ViewportPanel::DrawConsole(float height) {
 
     ImGui::Separator();
 
-    // Área de scroll
+    // ───────────── Área de scroll ─────────────
+    // Fondo levemente más claro para diferenciar del header
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, kContentBg);
     ImGui::BeginChild("##console_scroller", ImVec2(0, -28), false, ImGuiWindowFlags_HorizontalScrollbar);
     for (const auto& line : s_Log) {
         ImGui::TextUnformatted(line.c_str());
@@ -572,7 +580,9 @@ void ViewportPanel::DrawConsole(float height) {
         ImGui::SetScrollHereY(1.0f);
     }
     ImGui::EndChild();
+    ImGui::PopStyleColor(); // kContentBg
 
     ImGui::EndChild();
     ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
 }
