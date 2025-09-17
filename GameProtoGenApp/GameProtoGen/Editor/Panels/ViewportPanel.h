@@ -46,7 +46,6 @@ private:
     // ---------- Consola ----------
     std::vector<std::string> m_Log;  // líneas
     bool m_AutoScroll = true;
-    char m_ConsoleInput[256] = { 0 };  // opcional para futuros comandos
 
 private:
     void EnsureRT();

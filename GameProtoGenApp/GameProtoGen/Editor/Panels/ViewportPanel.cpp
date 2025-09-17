@@ -571,18 +571,6 @@ void ViewportPanel::DrawConsole(float height) {
     }
     ImGui::EndChild();
 
-    // (Opcional) input para futuros comandos — por ahora sólo hace echo al log
-    ImGui::PushItemWidth(-1);
-    if (ImGui::InputText("##console_input", m_ConsoleInput, IM_ARRAYSIZE(m_ConsoleInput),
-        ImGuiInputTextFlags_EnterReturnsTrue))
-    {
-        if (m_ConsoleInput[0] != '\0') {
-            AppendLog(std::string("> ") + m_ConsoleInput);
-            m_ConsoleInput[0] = '\0';
-        }
-    }
-    ImGui::PopItemWidth();
-
     ImGui::EndChild();
     ImGui::PopStyleVar();
 }
