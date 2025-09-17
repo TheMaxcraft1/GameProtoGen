@@ -16,6 +16,10 @@ public:
     void OnUpdate(const gp::Timestep& dt) override;
     void OnGuiRender() override;
 
+    // ---------- Consola ----------
+    static void AppendLog(const std::string& line);
+    void DrawConsole(float height); // dibuja la consola al final del panel
+
 private:
     // Render targets
     std::unique_ptr<sf::RenderTexture> m_RT;
@@ -43,11 +47,6 @@ private:
     sf::Texture m_IcoPlay, m_IcoPause, m_IcoSelect, m_IcoPan;
     bool m_IconPlayOK = false, m_IconPauseOK = false, m_IconSelectOK = false, m_IconPanOK = false;
 
-    // ---------- Consola ----------
-    std::vector<std::string> m_Log;  // líneas
-    bool m_AutoScroll = true;
-
-private:
     void EnsureRT();
 
     // Picking / utilidades
@@ -64,6 +63,6 @@ private:
     bool IconButtonPan(bool active);
 
     // Consola
-    void AppendLog(const std::string& line);
-    void DrawConsole(float height); // dibuja la consola al final del panel
+    bool m_AutoScroll = true;
+    static std::vector<std::string> s_Log;  // líneas compartidas por la consola
 };

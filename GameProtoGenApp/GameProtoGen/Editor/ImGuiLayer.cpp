@@ -4,6 +4,7 @@
 #include "ECS/Components.h"
 #include "ECS/SceneSerializer.h"
 #include "Runtime/SceneContext.h"
+#include "Editor/Panels/ViewportPanel.h"
 
 #include <imgui.h>
 #include <imgui-SFML.h>
@@ -12,11 +13,12 @@
 
 // Helpers Files/Proyecto
 namespace {
-    const char* kProjPath = "Saves/project.json";
+    const char* kSavesDir = "Saves";
+    const char* kProjectFile = "Saves/project.json"; // si lo usás en otro lado
 
     static void EnsureSavesDir() {
         try {
-            std::filesystem::path p(kProjPath);
+            std::filesystem::path p(kSavesDir);
             if (p.has_parent_path()) std::filesystem::create_directories(p.parent_path());
         }
         catch (...) {}
@@ -65,18 +67,63 @@ namespace {
     }
 
     static void DoSave() {
+        using namespace std::chrono;
+
         EnsureSavesDir();
         auto& ctx = SceneContext::Get();
-        if (ctx.scene) SceneSerializer::Save(*ctx.scene, kProjPath);
+        if (!ctx.scene) {
+            ViewportPanel::AppendLog("[SAVE] ERROR  escena nula");
+            return;
+        }
+
+        // Guardar SIEMPRE dentro del directorio de saves
+        auto path = std::filesystem::path(kSavesDir) / "scene.json";
+
+        bool ok = SceneSerializer::Save(*ctx.scene, path.string());
+
+        // --- Log a la consola ---
+        auto now = system_clock::now();
+        std::time_t t = system_clock::to_time_t(now);
+        std::tm tm{};
+#ifdef _WIN32
+        localtime_s(&tm, &t);
+#else
+        localtime_r(&t, &tm);
+#endif
+        std::ostringstream oss;
+        oss << "[SAVE] " << (ok ? "OK" : "ERROR")
+            << "  " << path.string() << "  "
+            << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
+        ViewportPanel::AppendLog(oss.str());
     }
 
     static void DoLoad() {
+        using namespace std::chrono;
+
         auto& ctx = SceneContext::Get();
-        if (ctx.scene && std::filesystem::exists(kProjPath)) {
-            if (SceneSerializer::Load(*ctx.scene, kProjPath)) {
-                FixSceneAfterLoad();
-            }
+        if (!ctx.scene) {
+            ViewportPanel::AppendLog("[LOAD] ERROR  escena nula");
+            return;
         }
+
+        auto path = std::filesystem::path(kSavesDir) / "scene.json";
+
+        bool ok = SceneSerializer::Load(*ctx.scene, path.string());
+        FixSceneAfterLoad();
+
+        auto now = system_clock::now();
+        std::time_t t = system_clock::to_time_t(now);
+        std::tm tm{};
+#ifdef _WIN32
+        localtime_s(&tm, &t);
+#else
+        localtime_r(&t, &tm);
+#endif
+        std::ostringstream oss;
+        oss << "[LOAD] " << (ok ? "OK" : "ERROR")
+            << "  " << path.string() << "  "
+            << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
+        ViewportPanel::AppendLog(oss.str());
     }
 
     // ----- Spawners ----------------------------------------------------

@@ -10,6 +10,8 @@
 #include <cmath>
 #include <algorithm>
 
+std::vector<std::string> ViewportPanel::s_Log{};  // ← DEFINICIÓN ÚNICA
+
 static inline void ClampDockedMinWidth(float minW) {
     if (ImGui::GetWindowWidth() < minW) {
         ImGui::SetWindowSize(ImVec2(minW, ImGui::GetWindowHeight()));
@@ -545,7 +547,7 @@ bool ViewportPanel::IconButtonPan(bool active) {
 // ───────────────────────── Consola ─────────────────────────
 
 void ViewportPanel::AppendLog(const std::string& line) {
-    m_Log.emplace_back(line);
+    s_Log.emplace_back(line);
 }
 
 void ViewportPanel::DrawConsole(float height) {
@@ -554,7 +556,7 @@ void ViewportPanel::DrawConsole(float height) {
 
     // Barra de acciones
     if (ImGui::Button("Limpiar")) {
-        m_Log.clear();
+        s_Log.clear();
     }
     ImGui::SameLine();
     ImGui::Checkbox("Desplazamiento automático", &m_AutoScroll);
@@ -563,7 +565,7 @@ void ViewportPanel::DrawConsole(float height) {
 
     // Área de scroll
     ImGui::BeginChild("##console_scroller", ImVec2(0, -28), false, ImGuiWindowFlags_HorizontalScrollbar);
-    for (const auto& line : m_Log) {
+    for (const auto& line : s_Log) {
         ImGui::TextUnformatted(line.c_str());
     }
     if (m_AutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 2.0f) {
