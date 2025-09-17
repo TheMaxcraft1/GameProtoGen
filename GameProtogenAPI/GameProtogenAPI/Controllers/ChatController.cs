@@ -1,4 +1,5 @@
-﻿using GameProtogenAPI.Services.Contracts;
+﻿using GameProtogenAPI.AI.Orchestration.Contracts;
+using GameProtogenAPI.Services.Contracts;
 using GameProtogenAPI.Validators;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
@@ -10,67 +11,40 @@ namespace GameProtogenAPI.Controllers
     [ApiController]
     public class ChatController : ControllerBase
     {
-        private readonly ILLMService _llm;
+        private readonly ISkSceneEditOrchestrator _orchestrator;
 
-        public ChatController(ILLMService llm)
+        public ChatController(ISkSceneEditOrchestrator orchestrator)
         {
-            _llm = llm;
+            _orchestrator = orchestrator;
         }
 
         [HttpPost("command")]
         public async Task<IActionResult> Command([FromBody] ChatCommandRequest req, CancellationToken ct)
         {
             if (string.IsNullOrWhiteSpace(req.prompt))
-                return BadRequest(new { error = "prompt vacío" });
+                return BadRequest("prompt vacío");
 
-            // Si vino objeto, usamos su JSON crudo; sino "{}"
-            var sceneJson =
-                (req.scene.HasValue &&
-                 req.scene.Value.ValueKind != JsonValueKind.Undefined &&
-                 req.scene.Value.ValueKind != JsonValueKind.Null)
-                ? req.scene.Value.GetRawText()
-                : "{}";
+            var sceneJson = req.scene.Value.GetRawText() ?? "{}";
 
-            // 1) NANO → plan XML
-            string planXml;
-            try
-            {
-                planXml = await _llm.BuildEditPlanXmlAsync(req.prompt, sceneJson, ct);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(502, new { error = "planner_failed" });
-            }
+            // --- Nuevo camino: planner+synth via SK
+            var result = await _orchestrator.RunAsync(req.prompt, sceneJson, ct);
 
-            // 2) MINI/4.1/5 → ops JSON
-            string opsJson;
-            try
-            {
-                opsJson = await _llm.PlanToOpsJsonAsync(planXml, ct);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(502, new { error = "synth_failed" });
-            }
-
-            // 3) Validación de salida antes de responder al editor
-            using var doc = JsonDocument.Parse(opsJson);
+            // Si vino kind:"ops", validamos con tu OpsValidator (como antes)
+            using var doc = JsonDocument.Parse(result);
             var root = doc.RootElement;
-            if (!OpsValidator.TryValidateOps(root, out string err))
+
+            if (root.TryGetProperty("kind", out var kind) && kind.GetString() == "ops")
             {
-                // MVP: devolvemos ops vacíos + error (el editor no se cae)
-                return Ok(new { ops = Array.Empty<object>(), error = $"ops inválidos: {err}" });
+                if (!OpsValidator.TryValidateOps(root, out string err))
+                {
+                    // MVP seguro: respuesta textual en vez de romper al editor
+                    var safe = $"{{\"kind\":\"answer\",\"answer\":\"Ops inválidas: {err}\"}}";
+                    return Content(safe, "application/json");
+                }
             }
 
-            // 4) Passthrough del JSON tal cual (evita reserializar y cambiar formato)
-            return new ContentResult
-            {
-                Content = opsJson,
-                ContentType = "application/json",
-                StatusCode = 200
-            };
-            // Si preferís devolver un objeto ya parseado:
-            // return Ok(JsonSerializer.Deserialize<object>(opsJson));
+            // Passthrough del JSON tal cual (contrato estable con el editor)
+            return Content(result, "application/json");
         }
     }
 }
