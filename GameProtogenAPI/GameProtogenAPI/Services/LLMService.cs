@@ -256,12 +256,17 @@ namespace GameProtogenAPI.Services
         // --- Helpers ---
         private static string ExtractPlanXml(string raw)
         {
+            if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
             var start = raw.IndexOf("<plan", StringComparison.OrdinalIgnoreCase);
-            if (start < 0) return "";
+            if (start < 0) return string.Empty;
+
             var end = raw.LastIndexOf("</plan>", StringComparison.OrdinalIgnoreCase);
-            if (end < 0) return "";
-            end += "</plan>".Length;
-            return raw.Substring(start, end - start);
+            if (end < 0) return string.Empty;
+
+            // Antes: return raw.Substring(start, end - start);
+            // Ahora: incluir el largo de "</plan>" (7 chars)
+            const int closingLen = 7; // "</plan>"
+            return raw.Substring(start, (end - start) + closingLen);
         }
     }
 }

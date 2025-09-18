@@ -1,6 +1,7 @@
 ﻿using GameProtogenAPI.AI.AgentPlugins;
 using GameProtogenAPI.AI.Orchestration.Contracts;
 using Microsoft.SemanticKernel;
+using System.Text;
 using System.Text.Json;
 
 namespace GameProtogenAPI.AI.Orchestration
@@ -45,8 +46,22 @@ namespace GameProtogenAPI.AI.Orchestration
             if (!doc.RootElement.TryGetProperty("ops", out _))
                 return """{"kind":"answer","answer":"El synthesizer no devolvió 'ops'."}""";
 
-            // Passthrough como {kind:"ops"} para el cliente
-            return opsJson.Insert(1, "\"kind\":\"ops\","); // truco simple para no reserializar
+            // Re-serializamos agregando el campo de forma segura
+            var root = doc.RootElement;
+
+            using var ms = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(ms))
+            {
+                writer.WriteStartObject();
+                writer.WriteString("kind", "ops");
+
+                // Copiar todas las propiedades existentes
+                foreach (var prop in root.EnumerateObject())
+                    prop.WriteTo(writer);
+
+                writer.WriteEndObject();
+            }
+            return Encoding.UTF8.GetString(ms.ToArray());
         }
     }
 }
