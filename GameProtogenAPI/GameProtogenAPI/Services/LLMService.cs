@@ -57,7 +57,7 @@ namespace GameProtogenAPI.Services
                 ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
                     jsonSchemaFormatName: "ops_schema",
                     jsonSchema: BinaryData.FromString(schema),
-                    jsonSchemaIsStrict: true
+                    jsonSchemaIsStrict: false
                 ),
                 ReasoningEffortLevel = ChatReasoningEffortLevel.Low
             };
