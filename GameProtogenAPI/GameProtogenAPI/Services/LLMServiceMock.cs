@@ -145,6 +145,23 @@ namespace GameProtogenAPI.Services
             return Task.FromResult(json);
         }
 
+        public Task<string> RouteAsync(string userPrompt, string sceneJson, CancellationToken ct = default)
+        {
+            var p = (userPrompt ?? "").ToLowerInvariant();
+            var design = p.Contains("diseñ") || p.Contains("design") || p.Contains("cómo") || p.Contains("why");
+            var agents = design ? new[] { "design_qa" } : new[] { "scene_edit" };
+            var json = JsonSerializer.Serialize(new { agents, reason = "mock" });
+            return Task.FromResult(json);
+        }
+
+        public Task<string> AskDesignAsync(string userQuestion, CancellationToken ct = default)
+        {
+            return Task.FromResult(
+                "Mock (design_qa): Para un salto responsivo probá gravedad 1800–2400 px/s², " +
+                "velocidad de salto 800–1000 px/s, coyote time 80–120 ms e input buffer 80–120 ms."
+            );
+        }
+
         // Helpers -----------------------------------------------------------
 
         private static bool SceneHasAnyWideFlatPlatform(string sceneJson)

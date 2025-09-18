@@ -127,7 +127,7 @@ namespace GameProtogenAPI.AI.Orchestration
             try
             {
                 var answer = await _kernel.InvokeAsync<string>(
-                    pluginName: nameof(DesignAdvisorPlugin),
+                    pluginName: nameof(GameDesignAdvisorPlugin),
                     functionName: "ask",
                     arguments: new() { ["question"] = prompt },
                     cancellationToken: ct
