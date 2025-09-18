@@ -105,20 +105,81 @@ void ChatPanel::OnGuiRender() {
         if (m_Fut.wait_for(0ms) == std::future_status::ready) {
             auto res = m_Fut.get();
             m_Busy = false;
-
             if (m_TypingIndex >= 0 && m_TypingIndex < (int)m_History.size()) {
                 auto& typingBubble = m_History[m_TypingIndex];
-                typingBubble.typing = false; // vamos a reemplazar su texto con el resultado
-                if (res.ok()) {
-                    // Aplico ops y armo resumen
-                    OpCounts c = ApplyOpsFromJson(*res.data);
-                    typingBubble.text = "Listo: "
-                        + std::to_string(c.created) + " creadas, "
-                        + std::to_string(c.modified) + " modificadas, "
-                        + std::to_string(c.removed) + " eliminadas.";
+                typingBubble.typing = false;
+
+                if (!res.ok()) {
+                    typingBubble.text = std::string("Error: ") + res.error;
                 }
                 else {
-                    typingBubble.text = std::string("Error: ") + res.error;
+                    const nlohmann::json& root = *res.data;
+                    const std::string kind = root.value("kind", "");
+
+                    if (kind == "ops") {
+                        OpCounts c = ApplyOpsFromJson(root);
+                        typingBubble.text = "Listo: "
+                            + std::to_string(c.created) + " creadas, "
+                            + std::to_string(c.modified) + " modificadas, "
+                            + std::to_string(c.removed) + " eliminadas.";
+                    }
+                    else if (kind == "text") {
+                        typingBubble.text = root.value("message", "");
+                    }
+                    else if (kind == "bundle") {
+                        OpCounts total{};
+                        std::vector<std::string> texts;
+
+                        if (root.contains("items") && root["items"].is_array()) {
+                            for (const auto& it : root["items"]) {
+                                const std::string ik = it.value("kind", "");
+                                if (ik == "ops") {
+                                    total.created += ApplyOpsFromJson(it).created;
+                                    total.modified += ApplyOpsFromJson(it).modified;
+                                    total.removed += ApplyOpsFromJson(it).removed;
+                                }
+                                else if (ik == "text") {
+                                    texts.push_back(it.value("message", ""));
+                                }
+                            }
+                        }
+
+                        // Si hubo cambios, resumimos en la burbuja "typing".
+                        if (total.created || total.modified || total.removed) {
+                            typingBubble.text = "Listo: "
+                                + std::to_string(total.created) + " creadas, "
+                                + std::to_string(total.modified) + " modificadas, "
+                                + std::to_string(total.removed) + " eliminadas.";
+                            // Y si además hay textos, los agregamos como mensajes aparte
+                            for (auto& t : texts) {
+                                if (!t.empty())
+                                    m_History.push_back({ Role::Assistant, t, false });
+                            }
+                        }
+                        else {
+                            // Si NO hubo ops, usamos el primer texto como respuesta principal
+                            if (!texts.empty()) typingBubble.text = texts.front();
+                            // y el resto, como burbujas adicionales
+                            for (size_t i = 1; i < texts.size(); ++i) {
+                                if (!texts[i].empty())
+                                    m_History.push_back({ Role::Assistant, texts[i], false });
+                            }
+                            if (texts.empty()) {
+                                typingBubble.text = "No hubo cambios ni mensajes.";
+                            }
+                        }
+                    }
+                    else {
+                        // Compat / fallback
+                        // - Si el backend devolvió un JSON legacy con "ops" sin "kind"
+                        if (root.contains("ops"))
+                            typingBubble.text = "Listo: "
+                            + std::to_string(ApplyOpsFromJson(root).created) + " creadas, "
+                            + std::to_string(ApplyOpsFromJson(root).modified) + " modificadas, "
+                            + std::to_string(ApplyOpsFromJson(root).removed) + " eliminadas.";
+                        else
+                            typingBubble.text = root.dump(); // mostrar algo útil
+                    }
                 }
             }
             m_TypingIndex = -1;
