@@ -30,6 +30,9 @@ builder.Services.AddSingleton(sp =>
     // 2) Agregar plugins (Planner y Synthesizer)
     kernel.Plugins.AddFromType<PlannerPlugin>(serviceProvider: sp);
     kernel.Plugins.AddFromType<SynthesizerPlugin>(serviceProvider: sp);
+    kernel.Plugins.AddFromType<GameDesignAdvisorPlugin>(serviceProvider: sp);
+    kernel.Plugins.AddFromType<RouterPlugin>(serviceProvider: sp);
+
     return kernel;
 });
 

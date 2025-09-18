@@ -15,6 +15,64 @@ namespace GameProtogenAPI.Services
             _logger = logger;
         }
 
+        public async Task<string> RouteAsync(string userPrompt, string sceneJson, CancellationToken ct = default)
+        {
+            var system = """
+                    You are a routing agent for a 2D prototyping tool.
+                    Decide which specialized agents should run for the user's prompt.
+                    Available agents:
+                      - "scene_edit": when the user asks to create/move/remove/edit entities, colors, transforms, level layout, collisions, etc.
+                      - "design_qa": when the user asks conceptual game design questions (level design, difficulty, pacing, coyote time, input buffering, economy, UX).
+                    Output a JSON with keys:
+                      - "agents": array of strings in execution order (subset of the above, unique, 1..3 items).
+                      - "reason": short explanation (<= 200 chars).
+                    If unsure between scene_edit and design_qa and the prompt is mostly conceptual, prefer "design_qa".
+                    Language: same as user.
+                """;
+
+            var schema = """
+                {
+                  "type": "object",
+                  "required": ["agents","reason"],
+                  "properties": {
+                    "agents": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 3,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "enum": ["scene_edit","design_qa"]
+                      }
+                    },
+                    "reason": { "type": "string" }
+                  },
+                  "additionalProperties": false
+                }
+                """;
+
+#pragma warning disable OPENAI001
+            var options = new ChatCompletionOptions
+            {
+                ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
+                    jsonSchemaFormatName: "ops_schema",
+                    jsonSchema: BinaryData.FromString(schema),
+                    jsonSchemaIsStrict: true
+                ),
+                ReasoningEffortLevel = ChatReasoningEffortLevel.Low
+            };
+#pragma warning restore OPENAI001
+
+            var user = $"Prompt:\n{userPrompt}\n\n(For context, here is the current scene JSON):\n{sceneJson}";
+            var completion = await _mini.CompleteChatAsync(
+                [new SystemChatMessage(system), new UserChatMessage(user)],
+                options, ct);
+
+            var json = completion.Value.Content?[0].Text ?? "{}";
+            _logger.LogInformation("ROUTER response: {Json}", json);
+            return json;
+        }
+
         public async Task<string> BuildEditPlanXmlAsync(string userPrompt, string sceneJson, CancellationToken ct = default)
         {
             var system = """
@@ -251,6 +309,44 @@ namespace GameProtogenAPI.Services
                 throw new InvalidOperationException("El MINI no devolvió JSON con 'ops'.");
 
             return json;
+        }
+
+        public async Task<string> AskDesignAsync(string userQuestion, CancellationToken ct = default)
+        {
+            var system = """
+                You are a senior Game Design Advisor specialized in 2D platformers and rapid prototyping.
+                Goals:
+                  - Give concise, actionable answers (≤ 12 lines).
+                  - Use concrete numbers (pixels, seconds), simple formulas, ranges and trade-offs.
+                  - Reference common patterns: jump arcs, coyote time, input buffering, acceleration curves, invulnerability frames.
+                  - Avoid engine-specific APIs; speak conceptually with practical tips that transfer across engines.
+                Output:
+                  - Plain text only, no code unless explicitly asked.
+                Language: match the user's language.
+            """;
+
+#pragma warning disable OPENAI001
+            var options = new ChatCompletionOptions
+            {
+                ReasoningEffortLevel = ChatReasoningEffortLevel.Low
+            };
+#pragma warning restore OPENAI001
+
+            var completionResult = await _mini.CompleteChatAsync(
+                new List<ChatMessage>
+                {
+            new SystemChatMessage(system),
+            new UserChatMessage(userQuestion)
+                },
+                options,
+                ct
+            );
+
+            var text = completionResult.Value.Content?[0].Text?.Trim();
+            _logger.LogInformation("DESIGN Q&A response: {Text}", text);
+            return string.IsNullOrWhiteSpace(text)
+                ? "No tengo una respuesta útil en este momento."
+                : text!;
         }
 
         // --- Helpers ---
