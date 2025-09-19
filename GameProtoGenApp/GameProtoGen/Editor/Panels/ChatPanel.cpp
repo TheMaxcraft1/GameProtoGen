@@ -10,9 +10,50 @@
 #include <cctype>
 #include <cmath>
 #include <unordered_set>
+#include <SFML/Graphics.hpp>
+#include <imgui-SFML.h>
 
 
 using json = nlohmann::json;
+
+// --- Helpers locales para dibujar iconos como botón (misma técnica que usás en otro componente) ---
+static ImVec2 FitIconHeight(const sf::Texture& tex, float btnH) {
+    const auto size = tex.getSize();
+    if (size.y == 0) return ImVec2(btnH, btnH);
+    float scale = btnH / static_cast<float>(size.y);
+    return ImVec2(size.x * scale, btnH);
+}
+
+static bool IconButtonFromTexture(const char* id,
+    const sf::Texture& tex,
+    float height,
+    const char* tooltip,
+    bool toggled = false)
+{
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 posStart = ImGui::GetCursorScreenPos();
+    ImVec2 sz = FitIconHeight(tex, height);
+
+    // Zona clickeable
+    ImGui::InvisibleButton(id, ImVec2(sz.x, sz.y));
+    bool pressed = ImGui::IsItemClicked();
+    bool hovered = ImGui::IsItemHovered();
+    bool active = ImGui::IsItemActive();
+
+    // Dibujo del icono
+    ImGui::SetCursorScreenPos(posStart);
+    ImGui::Image(tex, sz);
+    ImGui::SetCursorScreenPos(ImVec2(posStart.x + sz.x, posStart.y));
+
+    // Feedback visual (borde)
+    if (hovered || active || toggled) {
+        ImU32 col = ImGui::GetColorU32(active ? ImGuiCol_ButtonActive
+            : (toggled ? ImGuiCol_ButtonActive : ImGuiCol_ButtonHovered));
+        dl->AddRect(posStart, ImVec2(posStart.x + sz.x, posStart.y + sz.y), col, 6.0f, 0, 2.0f);
+    }
+    if (hovered && tooltip && *tooltip) ImGui::SetTooltip("%s", tooltip);
+    return pressed;
+}
 
 // ------------------------- helpers de color -------------------------
 static inline bool is_hex_digit(char c) {
@@ -212,73 +253,138 @@ void ChatPanel::SendCurrentPrompt() {
 }
 
 void ChatPanel::RenderHistory() {
-    ImDrawList* dl = ImGui::GetWindowDrawList();
     const ImVec2 regionMin = ImGui::GetWindowPos();
-    const ImVec2 regionAvail = ImGui::GetContentRegionAvail();
     const float maxWidth = ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x;
 
     const float bubbleW = std::min(520.0f, maxWidth * 0.9f);
     const float pad = 8.0f;
     const float spacingY = 6.0f;
 
+    // Carga perezosa del icono de copiar
+    static sf::Texture s_CopyTex;
+    static bool s_CopyOk = false;
+    static bool s_CopyInit = false;
+    if (!s_CopyInit) {
+        s_CopyInit = true;
+        s_CopyOk = s_CopyTex.loadFromFile("Assets/Icons/copy.png");
+        s_CopyTex.setSmooth(true);
+    }
+
+    // Ventana de “copiado” por mensaje (segundos desde ImGui::GetTime())
+    static std::vector<double> s_CopyUntil;
+
+    // Asegurar tamaño del vector estado
+    if (s_CopyUntil.size() < m_History.size())
+        s_CopyUntil.resize(m_History.size(), -1.0);
+
     for (size_t i = 0; i < m_History.size(); ++i) {
-        const auto& msg = m_History[i];
+        auto& msg = m_History[i];
         const bool isUser = (msg.role == Role::User);
 
         // Colores
-        ImVec4 bg = isUser ? ImVec4(0.16f, 0.45f, 0.92f, 1.0f)   // azul user
-            : ImVec4(0.92f, 0.92f, 0.95f, 1.0f);  // gris claro assistant
-        ImVec4 fg = isUser ? ImVec4(1, 1, 1, 1) : ImVec4(0.10f, 0.10f, 0.12f, 1.0f);
+        ImVec4 bg = isUser ? ImVec4(0.16f, 0.45f, 0.92f, 1.0f)
+            : ImVec4(0.92f, 0.92f, 0.95f, 1.0f);
+        ImVec4 fg = isUser ? ImVec4(1, 1, 1, 1)
+            : ImVec4(0.10f, 0.10f, 0.12f, 1.0f);
 
-        // Alineación: user a la derecha, assistant a la izquierda
+        // Alineación: user a la derecha / assistant a la izquierda
         float cursorY = ImGui::GetCursorPosY();
         float startX = isUser ? (ImGui::GetWindowContentRegionMax().x - bubbleW)
             : (ImGui::GetWindowContentRegionMin().x);
-        // Trasladar a coords locales
         startX += ImGui::GetWindowPos().x;
 
-        // Set cursor
         ImGui::SetCursorScreenPos(ImVec2(startX, regionMin.y + cursorY));
 
-        // Child con fondo (altura auto)
+        // Burbuja (child sin padding interno)
         ImGui::PushStyleColor(ImGuiCol_ChildBg, bg);
         ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
         std::string child_id = "##msg" + std::to_string(i);
-
 #if IMGUI_VERSION_NUM >= 19000
         ImGuiChildFlags cflags = ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Border;
         ImGuiWindowFlags wflags = ImGuiWindowFlags_NoScrollbar;
         ImGui::BeginChild(child_id.c_str(), ImVec2(bubbleW, 0.0f), cflags, wflags);
 #else
-        ImGui::BeginChild(child_id.c_str(), ImVec2(bubbleW, 0.0f), /*border*/true,
+        ImGui::BeginChild(child_id.c_str(), ImVec2(bubbleW, 0.0f), true,
             ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_AlwaysAutoResize);
 #endif
 
         ImGui::PushStyleColor(ImGuiCol_Text, fg);
+
+        // Padding interno manual
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + pad);
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + pad);
 
-        // Contenido: texto normal o “...”
+        const float innerW = bubbleW - 2.0f * pad;
+
         if (!msg.typing) {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + (bubbleW - 2 * pad));
+            // Texto con wrap perfecto (sin multiline)
+            ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + innerW);
             ImGui::TextUnformatted(msg.text.c_str());
             ImGui::PopTextWrapPos();
+
+            // Solo botón copiar en respuestas del asistente
+            if (!isUser) {
+                ImGui::Dummy(ImVec2(0, pad * 0.5f));
+
+                // Alinear a la derecha
+                float x0 = ImGui::GetCursorPosX();
+                float y0 = ImGui::GetCursorPosY();
+
+                // Medimos el icono
+                float iconH = 18.0f;
+                ImVec2 iconSz = s_CopyOk ? FitIconHeight(s_CopyTex, iconH) : ImVec2(40.0f, iconH);
+
+                // Posicionar a la derecha
+                ImGui::SetCursorPosX(x0 + innerW - iconSz.x);
+
+                // Tooltip dinámico: “Copiar” o “Copiado”
+                const double now = (double)ImGui::GetTime();
+                const bool showCopied = (s_CopyUntil[i] >= 0.0 && now < s_CopyUntil[i]);
+                const char* tooltip = showCopied ? "Copiado" : "Copiar";
+
+                bool clicked = false;
+                if (s_CopyOk) {
+                    clicked = IconButtonFromTexture(
+                        (std::string("##cpy_") + std::to_string(i)).c_str(),
+                        s_CopyTex,
+                        iconH,
+                        tooltip
+                    );
+                }
+                else {
+                    // Fallback si no cargó el icono
+                    clicked = ImGui::SmallButton((std::string("Copiar##cpy_") + std::to_string(i)).c_str());
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
+                }
+
+                if (clicked) {
+                    ImGui::SetClipboardText(msg.text.c_str());
+                    s_CopyUntil[i] = now + 1.5; // mostrar “Copiado” 1.5s
+                }
+
+                // Bajar el cursor debajo del icono
+                ImGui::SetCursorPosY(y0 + iconSz.y + pad * 0.5f);
+            }
         }
         else {
-            // Animación de puntos: 1..3
+            // Animación de “escribiendo…”
             int dots = 1 + (int)(ImGui::GetTime() * 3.0) % 3;
             static const char* DOTS[4] = { "", ".", "..", "..." };
             ImGui::TextUnformatted(DOTS[dots]);
+            ImGui::Dummy(ImVec2(0, pad * 0.5f));
         }
 
-        // padding inferior
+        // Padding inferior dentro de la burbuja
         ImGui::Dummy(ImVec2(0, pad));
 
         ImGui::PopStyleColor(); // text
         ImGui::EndChild();
-        ImGui::PopStyleVar();
-        ImGui::PopStyleColor();
+
+        ImGui::PopStyleVar();   // WindowPadding
+        ImGui::PopStyleVar();   // ChildRounding
+        ImGui::PopStyleColor(); // ChildBg
 
         // Espacio entre mensajes
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + spacingY);
