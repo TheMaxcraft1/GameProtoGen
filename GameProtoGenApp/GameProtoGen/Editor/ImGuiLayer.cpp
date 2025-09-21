@@ -17,11 +17,12 @@ namespace {
     const char* kProjectFile = "Saves/project.json"; // si lo usás en otro lado
 
     static void EnsureSavesDir() {
-        try {
-            std::filesystem::path p(kSavesDir);
-            if (p.has_parent_path()) std::filesystem::create_directories(p.parent_path());
+        std::filesystem::path p(kSavesDir);
+        std::error_code ec;
+        std::filesystem::create_directories(p, ec);
+        if (ec) {
+            ViewportPanel::AppendLog(std::string("[SAVE] ERROR creando carpeta: ") + ec.message());
         }
-        catch (...) {}
     }
 
     // Fallback post-load por si abrís un JSON viejo sin física/controlador

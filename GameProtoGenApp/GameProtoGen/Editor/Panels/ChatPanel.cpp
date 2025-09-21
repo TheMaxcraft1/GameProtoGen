@@ -211,15 +211,16 @@ void ChatPanel::OnGuiRender() {
                         }
                     }
                     else {
-                        // Compat / fallback
-                        // - Si el backend devolvió un JSON legacy con "ops" sin "kind"
-                        if (root.contains("ops"))
+                        if (root.contains("ops")) {
+                            OpCounts c = ApplyOpsFromJson(root);
                             typingBubble.text = "Listo: "
-                            + std::to_string(ApplyOpsFromJson(root).created) + " creadas, "
-                            + std::to_string(ApplyOpsFromJson(root).modified) + " modificadas, "
-                            + std::to_string(ApplyOpsFromJson(root).removed) + " eliminadas.";
-                        else
-                            typingBubble.text = root.dump(); // mostrar algo útil
+                                + std::to_string(c.created) + " creadas, "
+                                + std::to_string(c.modified) + " modificadas, "
+                                + std::to_string(c.removed) + " eliminadas.";
+                        }
+                        else {
+                            typingBubble.text = root.dump();
+                        }
                     }
                 }
             }
