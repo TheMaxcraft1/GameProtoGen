@@ -82,6 +82,9 @@ namespace GameProtogenAPI.AI.Orchestration
             if (string.Equals(agent, "design_qa", StringComparison.OrdinalIgnoreCase))
                 return await RunDesignQaAsync(prompt, ct);
 
+            if (string.Equals(agent, "asset_gen", StringComparison.OrdinalIgnoreCase))
+                return await RunAssetGenAsync(prompt, ct);
+
             // default: scene_edit
             return await RunSceneEditAsync(prompt, sceneJson, ct);
         }
@@ -90,7 +93,21 @@ namespace GameProtogenAPI.AI.Orchestration
         private async Task<string> ExecuteAgentsBundleAsync(string[] agents, string prompt, string sceneJson, CancellationToken ct)
         {
             var items = new List<JsonElement>();
+            var assetPaths = new List<string>();
 
+            // 1) Corre asset_gen primero si está presente (para tener paths)
+            foreach (var a in agents)
+            {
+                if (string.Equals(a, "asset_gen", StringComparison.OrdinalIgnoreCase))
+                {
+                    var json = await RunAssetGenAsync(prompt, ct);
+                    var item = JsonDocument.Parse(json).RootElement.Clone();
+                    items.Add(item);
+                    assetPaths.AddRange(ExtractAssetPathsFromItem(item));
+                }
+            }
+
+            // 2) Luego corre scene_edit (inyectando assets si existen)
             foreach (var a in agents)
             {
                 if (string.Equals(a, "design_qa", StringComparison.OrdinalIgnoreCase))
@@ -100,8 +117,17 @@ namespace GameProtogenAPI.AI.Orchestration
                 }
                 else if (string.Equals(a, "scene_edit", StringComparison.OrdinalIgnoreCase))
                 {
-                    var item = await TryRunSceneEditAsItemAsync(prompt, sceneJson, ct);
-                    items.Add(item);
+                    var augmentedPrompt = prompt;
+                    if (assetPaths.Count > 0)
+                    {
+                        // Bloque para el planner/synthesizer:
+                        // indicar que debe usar texturePath en las plataformas nuevas
+                        augmentedPrompt += "\n\n[ASSETS]\n";
+                        foreach (var p in assetPaths) augmentedPrompt += $"- {p}\n";
+                        augmentedPrompt += "Usa estas texturas para las plataformas nuevas (texturePath).";
+                    }
+                    var json = await RunSceneEditAsync(augmentedPrompt, sceneJson, ct);
+                    items.Add(JsonDocument.Parse(json).RootElement.Clone());
                 }
                 // (extensible: code_gen / image_gen aquí)
             }
@@ -233,6 +259,34 @@ namespace GameProtogenAPI.AI.Orchestration
                 w.WriteEndObject();
             }
             return Encoding.UTF8.GetString(ms.ToArray());
+        }
+
+        // ───────────────────────── Wrappers JSON ─────────────────────────
+        private async Task<string> RunAssetGenAsync(string prompt, CancellationToken ct)
+        {
+            try
+            {
+                var json = await _kernel.InvokeAsync<string>(
+                    pluginName: nameof(AssetGenPlugin),
+                    functionName: "generate",
+                    arguments: new() { ["prompt"] = prompt },
+                    cancellationToken: ct
+                );
+                return json ?? "{\"kind\":\"text\",\"message\":\"AssetGen devolvió vacío.\"}";
+            }
+            catch (Exception ex)
+            {
+                return WrapText($"Error en asset_gen: {ex.Message}");
+            }
+        }
+
+        private static string[] ExtractAssetPathsFromItem(JsonElement item)
+        {
+            if (item.ValueKind != JsonValueKind.Object) return Array.Empty<string>();
+            if (!item.TryGetProperty("kind", out var k) || k.GetString() != "asset") return Array.Empty<string>();
+            if (item.TryGetProperty("path", out var p) && p.ValueKind == JsonValueKind.String)
+                return new[] { p.GetString()! };
+            return Array.Empty<string>();
         }
     }
 }

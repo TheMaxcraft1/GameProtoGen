@@ -407,16 +407,18 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
         std::string type = op.value("op", "");
 
         if (type == "spawn_box") {
-            // ---- Crear entidad ----
             auto pos = op["pos"];
             auto size = op["size"];
             sf::Color col = TryParseColor(op, sf::Color(60, 60, 70, 255));
-
             Entity e = ctx.scene->CreateEntity();
             ctx.scene->transforms[e.id] = Transform{ {pos[0].get<float>(), pos[1].get<float>()}, {1.f,1.f}, 0.f };
             ctx.scene->sprites[e.id] = Sprite{ {size[0].get<float>(), size[1].get<float>()}, col };
             ctx.scene->colliders[e.id] = Collider{ {size[0].get<float>() * 0.5f, size[1].get<float>() * 0.5f}, {0.f,0.f} };
 
+            // NUEVO: textura opcional
+            if (op.contains("texturePath") && op["texturePath"].is_string()) {
+                ctx.scene->textures[e.id] = Texture2D{ op["texturePath"].get<std::string>() };
+            }
             created.insert(e.id);
         }
         else if (type == "set_transform") {
@@ -489,6 +491,13 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
                 }
 
                 if (created.count(id) == 0) modified.insert(id);
+            }
+            else if (id && comp == "Texture2D" && op.contains("value") && op["value"].is_object()) {
+                const auto& value = op["value"];
+                if (value.contains("path") && value["path"].is_string()) {
+                    ctx.scene->textures[id] = Texture2D{ value["path"].get<std::string>() };
+                    if (created.count(id) == 0) modified.insert(id);
+                }
             }
         }
         else if (type == "remove_entity") {

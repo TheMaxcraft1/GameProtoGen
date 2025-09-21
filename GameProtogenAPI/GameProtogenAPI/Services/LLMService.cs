@@ -167,13 +167,15 @@ namespace GameProtogenAPI.Services
                   - remove_entity:
                     {"op":"remove_entity","entity":id}
 
-                  - set_component (para mutar datos de un componente existente, p.ej. color/tamaño del Sprite):
+                  - set_component (para mutar datos de un componente existente):
                     {"op":"set_component","component":"Sprite","entity":id,"value":{"colorHex":"#RRGGBBAA"|"color":{r,g,b,a}?,"size":[w,h]?}}
+                    {"op":"set_component","component":"Texture2D","entity":id,"value":{"path":"Assets/.../file.png"}}
 
                 REGLAS ESTRICTAS DE FORMATO:
                 - NUNCA uses "entities". NUNCA agrupes varios IDs en una sola operación.
                 - Si el plan menciona múltiples entidades, genera N operaciones separadas (una por entidad).
                 - Mantén los nombres de campos EXACTOS.
+                - Si hay un bloque [ASSETS] en el prompt, asigna **texturePath** a las plataformas nuevas (puede ser la misma ruta para todas si aplica).
                 - Convierte cualquier color por nombre o formato RGBA a "colorHex" #RRGGBBAA.
                 - Cuando muevas/ubiques plataformas, si aplicara, usa múltiplos de 32.
                 - No incluyas comentarios, ni texto fuera del JSON.

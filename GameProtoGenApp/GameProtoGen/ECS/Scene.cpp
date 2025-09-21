@@ -19,6 +19,7 @@ void Scene::DestroyEntity(Entity e) {
     transforms.erase(e.id);
     sprites.erase(e.id);
     colliders.erase(e.id);
+    textures.erase(e.id);
     physics.erase(e.id);
     playerControllers.erase(e.id);
     // borrar de la lista de entidades (O(n), suficiente para MVP)

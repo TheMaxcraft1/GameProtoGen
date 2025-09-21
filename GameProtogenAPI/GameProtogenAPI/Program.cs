@@ -6,6 +6,7 @@ using GameProtogenAPI.Services.Contracts;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.SemanticKernel;
 using OpenAI.Chat;
+using OpenAI.Images;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +21,9 @@ var apiKey = builder.Configuration["OpenAI:ApiKey"] ??
 if (string.IsNullOrWhiteSpace(apiKey))
     throw new InvalidOperationException("Falta OPENAI_API_KEY");
 
+builder.Services.AddSingleton<ImageClient>(_ =>
+    new ImageClient("gpt-image-1", apiKey));
+
 builder.Services.AddSingleton(sp =>
 {
     // Podés parametrizar el modelo desde config si querés
@@ -32,6 +36,7 @@ builder.Services.AddSingleton(sp =>
     kernel.Plugins.AddFromType<SynthesizerPlugin>(serviceProvider: sp);
     kernel.Plugins.AddFromType<GameDesignAdvisorPlugin>(serviceProvider: sp);
     kernel.Plugins.AddFromType<RouterPlugin>(serviceProvider: sp);
+    kernel.Plugins.AddFromType<AssetGenPlugin>(serviceProvider: sp);
 
     return kernel;
 });

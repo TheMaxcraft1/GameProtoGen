@@ -11,7 +11,10 @@ struct Transform {
 struct Sprite {
     sf::Vector2f size{ 100.f, 100.f };  // ancho/alto en píxeles
     sf::Color color{ sf::Color::Green };
-    // (MVP) sin textura por ahora
+};
+
+struct Texture2D {
+    std::string path; // ej: "Assets/Generated/sprite_....png"
 };
 
 struct Collider {

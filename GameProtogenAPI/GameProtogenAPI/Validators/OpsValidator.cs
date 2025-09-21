@@ -52,6 +52,12 @@ namespace GameProtogenAPI.Validators
                         { error = "set_component.component string requerido."; return false; }
                         if (!op.TryGetProperty("value", out var val) || val.ValueKind != JsonValueKind.Object)
                         { error = "set_component.value object requerido."; return false; }
+                        // Permite "Sprite" (como antes) y "Texture2D" con {path}
+                        if (comp.GetString() == "Texture2D")
+                        {
+                            if (!val.TryGetProperty("path", out var p) || p.ValueKind != JsonValueKind.String)
+                            { error = "Texture2D.value.path string requerido."; return false; }
+                        }
                         break;
 
                     default:
