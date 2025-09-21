@@ -74,7 +74,7 @@ public:
         PushLayer(new ViewportPanel());
         PushLayer(new InspectorPanel());
         auto client = std::make_shared<ApiClient>("127.0.0.1", 5199);
-        client->SetTimeouts(2, 800, 600);
+        client->SetTimeouts(10, 180, 30);
         PushLayer(new ChatPanel(client));
 
         // Semilla / Carga de proyecto

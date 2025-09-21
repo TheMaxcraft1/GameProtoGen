@@ -24,11 +24,10 @@ public:
     std::future<Result> SendCommandAsync(std::string prompt,
         nlohmann::json scene);
 
-    // Conservamos la firma para no tocar tu EditorApp.
     void SetTimeouts(int connectSec, int readSec, int writeSec) {
-        m_ConnectTimeoutSec = connectSec;
-        m_ReadTimeoutSec = readSec;
-        m_WriteTimeoutSec = writeSec;
+        m_ConnectTimeoutSec = connectSec; // tiempo máximo para establecer la conexión
+		m_ReadTimeoutSec = readSec; // tiempo máximo para recibir la respuesta
+		m_WriteTimeoutSec = writeSec; // tiempo máximo para enviar la request
     }
 
     void SetBasePath(std::string basePath) { m_BasePath = std::move(basePath); }
