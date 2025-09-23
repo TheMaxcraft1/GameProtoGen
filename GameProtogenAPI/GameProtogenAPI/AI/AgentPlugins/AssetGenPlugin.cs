@@ -1,4 +1,6 @@
-﻿using OpenAI.Images;
+﻿using Microsoft.SemanticKernel;
+using OpenAI.Images;
+using System.ComponentModel;
 using System.Text.Json;
 
 namespace GameProtogenAPI.AI.AgentPlugins
@@ -14,33 +16,29 @@ namespace GameProtogenAPI.AI.AgentPlugins
             _logger = logger;
         }
 
-        /// Genera una textura PNG desde una descripción y la guarda en Assets/Generated.
-        /// Devuelve JSON: { "kind":"asset", "path":"Assets/Generated/xxx.png", "w":512, "h":512 }
-        public async Task<string> GenerateTextureAsync(
-            string description,
-            int width = 512,
-            int height = 512,
-            CancellationToken ct = default)
+        [KernelFunction("generate_asset")]
+        [Description("Genera una imagen (textura/sprite) y la devuelve en base64 para que el cliente la guarde localmente.")]
+        public async Task<string> GenerateAsync(
+        [Description("Descripción de la textura a generar")] string prompt,
+        CancellationToken ct = default)
         {
-            if (string.IsNullOrWhiteSpace(description))
+            if (string.IsNullOrWhiteSpace(prompt))
                 return JsonSerializer.Serialize(new { kind = "text", message = "Descripción vacía." });
 
-            // 1) La SDK 2.4.0 usa tamaños discretos (256/512/1024) y cuadrados:
-            var sizeEnum = MapToGeneratedImageSize(width, height, out int actual);
-
-            var options = new ImageGenerationOptions
-            {
-                // No uses string "WxH": el tipo aquí es GeneratedImageSize?
-                Size = sizeEnum
-                // Consejo: si tu build expone un "ResponseFormat/Format"
-                // podés forzar bytes; si no, igual abajo cubrimos base64/URL.
+            // Tamaño fijo inicial (512x512). Si más adelante querés parametrizar ancho/alto, lo ampliamos.
+#pragma warning disable OPENAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+            var options = new ImageGenerationOptions { 
+                Size = GeneratedImageSize.W1024xH1024, 
+                Quality = GeneratedImageQuality.Medium,
+                Background = GeneratedImageBackground.Transparent
             };
+#pragma warning restore OPENAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 
             GeneratedImage img;
             try
             {
-                var gen = await _images.GenerateImageAsync(description, options, ct);
-                img = gen.Value; // Si falla, la SDK lanza excepción antes de esto
+                var gen = await _images.GenerateImageAsync(prompt, options, ct);
+                img = gen.Value;
             }
             catch (Exception ex)
             {
@@ -48,53 +46,23 @@ namespace GameProtogenAPI.AI.AgentPlugins
                 return JsonSerializer.Serialize(new { kind = "text", message = $"No pude generar la imagen: {ex.Message}" });
             }
 
-            // 2) Extraer bytes (cubre bytes/base64/url según qué devuelva el modelo)
             byte[] bytes = await GetBytesAsync(img, ct);
             if (bytes.Length == 0)
                 return JsonSerializer.Serialize(new { kind = "text", message = "El modelo no devolvió datos de imagen." });
 
-            // 3) Guardar a disco
-            var fileName = MakeSafeFileName($"{DateTime.UtcNow:yyyyMMdd_HHmmssfff}_{TrimForName(description, 32)}.png");
-            var dir = Path.Combine("Assets", "Generated");
-            Directory.CreateDirectory(dir);
-            var path = Path.Combine(dir, fileName);
-            await File.WriteAllBytesAsync(path, bytes, ct);
+            var fileName = MakeSafeFileName($"{DateTime.UtcNow:yyyyMMdd_HHmmssfff}.png");
+            var b64 = Convert.ToBase64String(bytes);
 
-            _logger.LogInformation("Imagen guardada en {Path} ({Bytes} bytes)", path, bytes.Length);
-
-            // 4) Respuesta para tu editor / orquestador
+            // DEVOLVEMOS base64 para que el CLIENTE persista en Assets/Generated/.
             return JsonSerializer.Serialize(new
             {
                 kind = "asset",
-                path,
-                w = actual,
-                h = actual
+                fileName,
+                data = b64
             });
         }
 
         // --- helpers ---
-
-        // Mapea (w,h) arbitrario al enum cuadrado más cercano (256/512/1024)
-        private static GeneratedImageSize MapToGeneratedImageSize(int w, int h, out int actual)
-        {
-            int target = Math.Max(w, h);
-            int nearest = 512;
-            if (target <= 256) nearest = 256;
-            else if (target <= 512) nearest = 512;
-            else nearest = 1024;
-
-            actual = nearest;
-
-            // Enum típicos en 2.4.0: GeneratedImageSize.Size256x256 / Size512x512 / Size1024x1024
-            // Si tu build los nombra distinto, ajustá aquí.
-            return nearest switch
-            {
-                256 => GeneratedImageSize.W256xH256,
-                1024 => GeneratedImageSize.W1024xH1024,
-                _ => GeneratedImageSize.W512xH512
-            };
-        }
-
         private static async Task<byte[]> GetBytesAsync(GeneratedImage img, CancellationToken ct)
         {
             // Intentamos propiedades comunes vía reflexión para tolerar variaciones de la SDK
@@ -116,13 +84,6 @@ namespace GameProtogenAPI.AI.AgentPlugins
             }
 
             return Array.Empty<byte>();
-        }
-
-        private static string TrimForName(string s, int max)
-        {
-            s = new string(s.Where(ch => char.IsLetterOrDigit(ch) || char.IsWhiteSpace(ch)).ToArray());
-            s = s.Trim().Replace(' ', '_');
-            return s.Length <= max ? s : s[..max];
         }
 
         private static string MakeSafeFileName(string name)

@@ -25,7 +25,6 @@ namespace GameProtogenAPI.Controllers
             if (string.IsNullOrWhiteSpace(req.prompt))
                 return BadRequest("prompt vacío");
 
-            // sceneJson robusto (evita null/undefined)
             string sceneJson = "{}";
             try
             {
@@ -33,12 +32,11 @@ namespace GameProtogenAPI.Controllers
                 if (v.ValueKind != JsonValueKind.Undefined && v.ValueKind != JsonValueKind.Null)
                     sceneJson = v.GetRawText() ?? "{}";
             }
-            catch { /* si no viene scene, usamos "{}" */ }
+            catch { }
 
             string result;
             try
             {
-                // Orquestador ya puede devolver {kind:"ops"|"text"|"bundle"}
                 result = await _orchestrator.RunAsync(req.prompt, sceneJson, ct);
             }
             catch (Exception ex)
@@ -47,7 +45,6 @@ namespace GameProtogenAPI.Controllers
                 return Content(err, "application/json");
             }
 
-            // Si no vino JSON válido, lo envuelvo como texto
             JsonDocument doc;
             try { doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(result) ? "{}" : result); }
             catch
@@ -60,7 +57,7 @@ namespace GameProtogenAPI.Controllers
             {
                 var root = doc.RootElement;
 
-                // ───────────────────────── caso: bundle ─────────────────────────
+                // 1) Bundle: validamos las 'ops' internas, el resto pasa tal cual
                 if (root.TryGetProperty("kind", out var kElem) && kElem.GetString() == "bundle")
                 {
                     if (!root.TryGetProperty("items", out var arr) || arr.ValueKind != JsonValueKind.Array)
@@ -77,7 +74,6 @@ namespace GameProtogenAPI.Controllers
                             ik.ValueKind == JsonValueKind.String &&
                             ik.GetString() == "ops")
                         {
-                            // Validar cada bloque ops. Si falla, lo convierto en texto para no romper toda la respuesta.
                             if (!OpsValidator.TryValidateOps(item, out string err))
                             {
                                 var replaced = JsonDocument
@@ -89,12 +85,10 @@ namespace GameProtogenAPI.Controllers
                         }
                         else
                         {
-                            // Passthrough de textos u otros tipos soportados
                             outItems.Add(item.Clone());
                         }
                     }
 
-                    // reserializar bundle validado
                     using var msb = new MemoryStream();
                     using (var wb = new Utf8JsonWriter(msb))
                     {
@@ -109,7 +103,7 @@ namespace GameProtogenAPI.Controllers
                     return Content(Encoding.UTF8.GetString(msb.ToArray()), "application/json");
                 }
 
-                // ───────────────────────── caso: ops ─────────────────────────
+                // 2) Ops: validar y devolver
                 if (root.TryGetProperty("kind", out var kindElem) && kindElem.GetString() == "ops")
                 {
                     if (!OpsValidator.TryValidateOps(root, out string err))
@@ -120,14 +114,17 @@ namespace GameProtogenAPI.Controllers
                     return Content(result, "application/json");
                 }
 
-                // ───────────────────────── caso: text ─────────────────────────
+                // 3) Text: devolver tal cual
                 if (root.TryGetProperty("kind", out kindElem) && kindElem.GetString() == "text")
                     return Content(result, "application/json");
 
-                // ───────────────────────── compat: sin 'kind' ─────────────────────────
+                // 4) NUEVO: Asset (imagen en base64). Lo dejamos pasar crudo al cliente.
+                if (root.TryGetProperty("kind", out kindElem) && kindElem.GetString() == "asset")
+                    return Content(result, "application/json");
+
+                // 5) Si viene JSON con 'ops' pero sin 'kind', lo envolvemos y validamos
                 if (root.TryGetProperty("ops", out _))
                 {
-                    // añadir kind:"ops" de forma segura y validar
                     using var ms = new MemoryStream();
                     using (var w = new Utf8JsonWriter(ms))
                     {
@@ -137,7 +134,6 @@ namespace GameProtogenAPI.Controllers
                         w.WriteEndObject();
                     }
                     var withKind = Encoding.UTF8.GetString(ms.ToArray());
-
                     using var doc2 = JsonDocument.Parse(withKind);
                     if (!OpsValidator.TryValidateOps(doc2.RootElement, out string err))
                     {
@@ -147,7 +143,7 @@ namespace GameProtogenAPI.Controllers
                     return Content(withKind, "application/json");
                 }
 
-                // Si llega algo no soportado, texto defensivo
+                // 6) Fallback: cualquier otra cosa → texto
                 var asText = JsonSerializer.Serialize(new { kind = "text", message = root.ToString() });
                 return Content(asText, "application/json");
             }

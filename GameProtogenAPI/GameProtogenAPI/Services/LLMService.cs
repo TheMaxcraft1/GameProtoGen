@@ -18,38 +18,40 @@ namespace GameProtogenAPI.Services
         public async Task<string> RouteAsync(string userPrompt, string sceneJson, CancellationToken ct = default)
         {
             var system = """
-                    You are a routing agent for a 2D prototyping tool.
-                    Decide which specialized agents should run for the user's prompt.
-                    Available agents:
-                      - "scene_edit": when the user asks to create/move/remove/edit entities, colors, transforms, level layout, collisions, etc.
-                      - "design_qa": when the user asks conceptual game design questions (level design, difficulty, pacing, coyote time, input buffering, economy, UX).
-                    Output a JSON with keys:
-                      - "agents": array of strings in execution order (subset of the above, unique, 1..3 items).
-                      - "reason": short explanation (<= 200 chars).
-                    If unsure between scene_edit and design_qa and the prompt is mostly conceptual, prefer "design_qa".
-                    Language: same as user.
-                """;
+            You are a routing agent for a 2D prototyping tool.
+            Decide which specialized agents should run for the user's prompt.
+            Available agents:
+              - "scene_edit": when the user asks to create/move/remove/edit entities, colors, transforms, level layout, collisions, etc.
+              - "design_qa": when the user asks conceptual game design questions (level design, difficulty, pacing, coyote time, input buffering, economy, UX).
+              - "asset_gen": when the user asks to generate an image/texture/sprite/tile (e.g., mentions "imagen", "textura", "sprite", "tile", "png", "jpg", "render", "generate image/texture").
+            Output a JSON with keys:
+              - "agents": array of strings in execution order (subset of the above, unique, 1..3 items).
+              - "reason": short explanation (<= 200 chars).
+            If prompt clearly asks for an image/texture/sprite/tile, prefer ONLY ["asset_gen"].
+            If unsure between scene_edit and design_qa and the prompt is mostly conceptual, prefer "design_qa".
+            Language: same as user.
+        """;
 
             var schema = """
-                {
-                  "type": "object",
-                  "required": ["agents","reason"],
-                  "properties": {
-                    "agents": {
-                      "type": "array",
-                      "minItems": 1,
-                      "maxItems": 3,
-                      "uniqueItems": true,
-                      "items": {
-                        "type": "string",
-                        "enum": ["scene_edit","design_qa"]
-                      }
-                    },
-                    "reason": { "type": "string" }
-                  },
-                  "additionalProperties": false
-                }
-                """;
+        {
+          "type": "object",
+          "required": ["agents","reason"],
+          "properties": {
+            "agents": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 3,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "enum": ["scene_edit","design_qa","asset_gen"]
+              }
+            },
+            "reason": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+        """;
 
 #pragma warning disable OPENAI001
             var options = new ChatCompletionOptions

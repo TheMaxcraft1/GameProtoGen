@@ -268,7 +268,7 @@ namespace GameProtogenAPI.AI.Orchestration
             {
                 var json = await _kernel.InvokeAsync<string>(
                     pluginName: nameof(AssetGenPlugin),
-                    functionName: "generate",
+                    functionName: "generate_asset",
                     arguments: new() { ["prompt"] = prompt },
                     cancellationToken: ct
                 );

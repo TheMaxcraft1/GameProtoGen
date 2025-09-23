@@ -1,6 +1,7 @@
 #pragma once
 #include <SFML/Graphics/Color.hpp>
 #include <SFML/System/Vector2.hpp>
+#include <string>
 
 struct Transform {
     sf::Vector2f position{ 0.f, 0.f };

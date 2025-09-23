@@ -12,9 +12,66 @@
 #include <unordered_set>
 #include <SFML/Graphics.hpp>
 #include <imgui-SFML.h>
-
+#include <fstream>
+#include <vector>
+#include <filesystem>
+#include "ViewportPanel.h"
 
 using json = nlohmann::json;
+
+// ---------------- base64 decode helper (con soporte de padding '=') ----------------
+static std::vector<unsigned char> Base64Decode(const std::string& input) {
+    // -1: inválido/ignorar, -2: '=' padding
+    static const int8_t DT[256] = {
+        /* 0..15  */ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        /* 16..31 */ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        /* 32..47 */ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,62, -1,-1,-1,63,
+        /* 48..63 */ 52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-2,-1,-1,
+        /* 64..79 */ -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,
+        /* 80..95 */ 15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,
+        /* 96..111*/ -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+        /*112..127*/ 41,42,43,44,45,46,47,48,49,50,51,-1,-1,-1,-1,-1,
+        /*128..255*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1
+    };
+
+    std::vector<unsigned char> out;
+    out.reserve(input.size() * 3 / 4);
+    int val = 0, valb = -8;
+    for (unsigned char c : input) {
+        int d = DT[c];
+        if (d == -1) continue;   // ignora espacios/chars inválidos
+        if (d == -2) break;      // '=' padding -> fin
+        val = (val << 6) | d;
+        valb += 6;
+        if (valb >= 0) {
+            out.push_back(static_cast<unsigned char>((val >> valb) & 0xFF));
+            valb -= 8;
+        }
+    }
+    return out;
+}
+
+static bool SaveBase64ToFile(const std::string& base64, const std::string& outPath) {
+    try {
+        auto bytes = Base64Decode(base64);
+        if (bytes.empty()) return false;
+        std::filesystem::create_directories(std::filesystem::path(outPath).parent_path());
+        std::ofstream ofs(outPath, std::ios::binary);
+        if (!ofs) return false;
+        ofs.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+        return ofs.good();
+    }
+    catch (...) {
+        return false;
+    }
+}
 
 // --- Helpers locales para dibujar iconos como botón (misma técnica que usás en otro componente) ---
 static ImVec2 FitIconHeight(const sf::Texture& tex, float btnH) {
@@ -167,6 +224,25 @@ void ChatPanel::OnGuiRender() {
                     else if (kind == "text") {
                         typingBubble.text = root.value("message", "");
                     }
+                    else if (kind == "asset") {
+                        // NUEVO: guardar la imagen y mostrar resultado
+                        const std::string fileName = root.value("fileName", "asset.png");
+                        const std::string data = root.value("data", "");
+                        std::string safeName = fileName;
+                        for (char& ch : safeName) {
+                            if (ch == '/' || ch == '\\' || ch == ':' || ch == '*' ||
+                                ch == '?' || ch == '"' || ch == '<' || ch == '>' || ch == '|') ch = '_';
+                        }
+                        const std::string outPath = "Assets/Generated/" + safeName;
+                        if (!data.empty() && SaveBase64ToFile(data, outPath)) {
+                            typingBubble.text = std::string("Imagen guardada en:\n") + std::filesystem::absolute(outPath).string();
+                            ViewportPanel::AppendLog(std::string("[ASSET] Guardado: ") + outPath);
+                        }
+                        else {
+                            typingBubble.text = "No pude guardar la imagen (payload incompleto o base64 inválido).";
+                            ViewportPanel::AppendLog("[ASSET] ERROR al guardar la imagen.");
+                        }
+                    }
                     else if (kind == "bundle") {
                         OpCounts total{};
                         std::vector<std::string> texts;
@@ -182,6 +258,7 @@ void ChatPanel::OnGuiRender() {
                                 else if (ik == "text") {
                                     texts.push_back(it.value("message", ""));
                                 }
+                                // NOTA: por ahora ignoramos assets dentro de bundle (versión inicial)
                             }
                         }
 
@@ -395,6 +472,29 @@ void ChatPanel::RenderHistory() {
 // Aplica ops + devuelve conteo (creadas / modificadas / eliminadas)
 ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
     OpCounts counts;
+
+    // --- Caso especial: asset suelto (por compatibilidad si alguien llama a esta función) ---
+    if (resp.contains("kind") && resp["kind"].is_string() && resp["kind"] == "asset") {
+        std::string fname = resp.value("fileName", "asset.png");
+        std::string data = resp.value("data", "");
+        // sanitizar nombre
+        for (char& ch : fname) {
+            if (ch == '/' || ch == '\\' || ch == ':' || ch == '*' ||
+                ch == '?' || ch == '"' || ch == '<' || ch == '>' || ch == '|') ch = '_';
+        }
+        if (!data.empty()) {
+            std::string outPath = "Assets/Generated/" + fname;
+            if (SaveBase64ToFile(data, outPath)) {
+                ViewportPanel::AppendLog("[ASSET] Guardada imagen: " + outPath);
+            }
+            else {
+                ViewportPanel::AppendLog("[ASSET] ERROR al guardar: " + outPath);
+            }
+        }
+        return counts; // no hay ops
+    }
+
+    // --- Procesamiento normal de ops ---
     if (!resp.contains("ops") || !resp["ops"].is_array()) return counts;
 
     auto& ctx = SceneContext::Get();
@@ -422,7 +522,6 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
             created.insert(e.id);
         }
         else if (type == "set_transform") {
-            // ---- Modificar transform / (size) ----
             uint32_t id = GetEntityId(op);
             if (id && ctx.scene->transforms.contains(id)) {
                 auto& t = ctx.scene->transforms[id];
@@ -458,11 +557,10 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
                     t.rotationDeg = op["rotation"].get<float>();
                 }
 
-                if (created.count(id) == 0) modified.insert(id); // no contar como “modificada” si fue creada recién
+                if (created.count(id) == 0) modified.insert(id);
             }
         }
         else if (type == "set_component") {
-            // ---- Modificar componentes (Sprite, etc.) ----
             uint32_t id = GetEntityId(op);
             std::string comp = op.value("component", "");
 
@@ -501,13 +599,11 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
             }
         }
         else if (type == "remove_entity") {
-            // ---- Eliminar entidad (coalescer con casos “creada/ modificada” en el mismo batch) ----
             uint32_t id = GetEntityId(op);
             if (id && ctx.scene) {
                 ctx.scene->DestroyEntity(Entity{ id });
                 if (ctx.selected.id == id) ctx.selected = {};
 
-                // Si la creamos en este mismo batch, dejarla solo como “eliminada”
                 created.erase(id);
                 modified.erase(id);
                 removed.insert(id);
