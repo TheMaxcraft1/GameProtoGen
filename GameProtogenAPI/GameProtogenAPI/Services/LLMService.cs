@@ -18,40 +18,48 @@ namespace GameProtogenAPI.Services
         public async Task<string> RouteAsync(string userPrompt, string sceneJson, CancellationToken ct = default)
         {
             var system = """
-            You are a routing agent for a 2D prototyping tool.
-            Decide which specialized agents should run for the user's prompt.
-            Available agents:
-              - "scene_edit": when the user asks to create/move/remove/edit entities, colors, transforms, level layout, collisions, etc.
-              - "design_qa": when the user asks conceptual game design questions (level design, difficulty, pacing, coyote time, input buffering, economy, UX).
-              - "asset_gen": when the user asks to generate an image/texture/sprite/tile (e.g., mentions "imagen", "textura", "sprite", "tile", "png", "jpg", "render", "generate image/texture").
-            Output a JSON with keys:
-              - "agents": array of strings in execution order (subset of the above, unique, 1..3 items).
-              - "reason": short explanation (<= 200 chars).
-            If prompt clearly asks for an image/texture/sprite/tile, prefer ONLY ["asset_gen"].
-            If unsure between scene_edit and design_qa and the prompt is mostly conceptual, prefer "design_qa".
-            Language: same as user.
-        """;
+                You are a routing agent for a 2D prototyping tool.
+                Decide which specialized agents should run for the user's prompt.
+
+                Available agents:
+                  - "scene_edit": create/move/remove/edit entities, colors, transforms, level layout, collisions, etc.
+                  - "design_qa": conceptual game design (level design, difficulty, pacing, coyote time, input buffering, UX).
+                  - "asset_gen": generate an image/texture/sprite/tile (e.g., "imagen", "textura", "sprite", "tile", "png", "jpg", "render", "generate image/texture").
+
+                Output JSON keys:
+                  - "agents": array (execution order), unique, 1..3 items, subset of the above.
+                  - "reason": short explanation (<= 200 chars).
+                Language: same as user.
+
+                Routing rules (IMPORTANT):
+                - If the user asks to **generate** an image/texture/sprite/tile **AND** to **apply/use/set** it on existing/new entities,
+                  return BOTH agents in this order: ["asset_gen","scene_edit"].
+                  Examples: "generá una textura y aplicala al jugador", "quiero un sprite de mago y que se lo pongan al personaje".
+                - If the user ONLY asks for generation (no apply/use intent), return ONLY ["asset_gen"].
+                - If unsure between scene_edit and design_qa and the prompt is mostly conceptual, prefer "design_qa".
+                - If the user asks for scene edits without asset generation, return ONLY ["scene_edit"].
+                """;
 
             var schema = """
-        {
-          "type": "object",
-          "required": ["agents","reason"],
-          "properties": {
-            "agents": {
-              "type": "array",
-              "minItems": 1,
-              "maxItems": 3,
-              "uniqueItems": true,
-              "items": {
-                "type": "string",
-                "enum": ["scene_edit","design_qa","asset_gen"]
-              }
-            },
-            "reason": { "type": "string" }
-          },
-          "additionalProperties": false
-        }
-        """;
+            {
+              "type": "object",
+              "required": ["agents","reason"],
+              "properties": {
+                "agents": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 3,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "enum": ["scene_edit","design_qa","asset_gen"]
+                  }
+                },
+                "reason": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+            """;
 
 #pragma warning disable OPENAI001
             var options = new ChatCompletionOptions
@@ -261,23 +269,24 @@ namespace GameProtogenAPI.Services
                     "required": ["op","entity"]
                 },
                 "set_component": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
                     "op": { "type": "string", "enum": ["set_component"] },
-                    "component": { "type": "string", "enum": ["Sprite"] },
+                    "component": { "type": "string", "enum": ["Sprite","Texture2D"] }, // <- agregado Texture2D
                     "entity": { "type": "integer", "minimum": 1 },
                     "value": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
                         "colorHex": { "type": "string", "pattern": "^#([A-Fa-f0-9]{8}|[A-Fa-f0-9]{6})$" },
                         "color": { "$ref": "#/$defs/colorObj" },
-                        "size": { "$ref": "#/$defs/vec2" }
-                        }
+                        "size": { "$ref": "#/$defs/vec2" },
+                        "path": { "type": "string" } // <- para Texture2D
+                      }
                     }
-                    },
-                    "required": ["op","component","entity","value"]
+                  },
+                  "required": ["op","component","entity","value"]
                 }
                 }
             }
@@ -307,11 +316,27 @@ namespace GameProtogenAPI.Services
 
             var completion = completionResult.Value;
             var json = completion.Content[0].Text?.Trim() ?? "";
-            _logger.LogInformation("OPS response: {Json}", json);
+            _logger.LogInformation("OPS response (raw): {Json}", json);
 
-            if (string.IsNullOrWhiteSpace(json) || !json.Contains("\"ops\""))
-                throw new InvalidOperationException("El MINI no devolvió JSON con 'ops'.");
+            // --- Saneo robusto ---
+            json = StripCodeFences(json);
+            json = TrimToOuterJsonObject(json);
+            json = RemoveJsonComments(json);
 
+            // Validación temprana: ¿parsea y tiene "ops"?
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                if (!doc.RootElement.TryGetProperty("ops", out _))
+                    throw new InvalidOperationException("El MINI no devolvió JSON con 'ops'.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "OPS JSON inválido tras saneo");
+                throw; // será capturado arriba y envuelto como "Error en scene_edit: ..."
+            }
+
+            _logger.LogInformation("OPS response (clean): {Json}", json);
             return json;
         }
 
@@ -367,6 +392,44 @@ namespace GameProtogenAPI.Services
             // Ahora: incluir el largo de "</plan>" (7 chars)
             const int closingLen = 7; // "</plan>"
             return raw.Substring(start, (end - start) + closingLen);
+        }
+
+        private static string StripCodeFences(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return s ?? "";
+            s = s.Trim();
+            // ```json ... ```  o  ``` ...
+            if (s.StartsWith("```"))
+            {
+                // quitar la primera línea de fence
+                var idx = s.IndexOf('\n');
+                if (idx >= 0) s = s[(idx + 1)..];
+                // quitar fence de cierre
+                var lastFence = s.LastIndexOf("```", StringComparison.Ordinal);
+                if (lastFence >= 0) s = s[..lastFence];
+            }
+            return s.Trim();
+        }
+
+        private static string TrimToOuterJsonObject(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "{}";
+            int first = s.IndexOf('{');
+            int last = s.LastIndexOf('}');
+            if (first >= 0 && last >= first) return s.Substring(first, last - first + 1);
+            return s;
+        }
+
+        private static string RemoveJsonComments(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return s;
+            // Quitar // ... (hasta fin de línea)
+            s = System.Text.RegularExpressions.Regex.Replace(
+                    s, @"(?m)//.*?$", string.Empty);
+            // Quitar /* ... */ (multilínea)
+            s = System.Text.RegularExpressions.Regex.Replace(
+                    s, @"/\*.*?\*/", string.Empty, System.Text.RegularExpressions.RegexOptions.Singleline);
+            return s.Trim();
         }
     }
 }

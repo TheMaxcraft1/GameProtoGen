@@ -247,44 +247,58 @@ void ChatPanel::OnGuiRender() {
                         OpCounts total{};
                         std::vector<std::string> texts;
 
+                        // 1) PRIMER PASO: guardar assets
+                        if (root.contains("items") && root["items"].is_array()) {
+                            for (const auto& it : root["items"]) {
+                                const std::string ik = it.value("kind", "");
+                                if (ik == "asset") {
+                                    const std::string fileName = it.value("fileName", "asset.png");
+                                    const std::string data = it.value("data", "");
+                                    std::string safeName = fileName;
+                                    for (char& ch : safeName) {
+                                        if (ch == '/' || ch == '\\' || ch == ':' || ch == '*' ||
+                                            ch == '?' || ch == '"' || ch == '<' || ch == '>' || ch == '|') ch = '_';
+                                    }
+                                    const std::string outPath = "Assets/Generated/" + safeName;
+                                    if (!data.empty() && SaveBase64ToFile(data, outPath)) {
+                                        ViewportPanel::AppendLog(std::string("[ASSET] Guardado: ") + outPath);
+                                    }
+                                    else {
+                                        ViewportPanel::AppendLog("[ASSET] ERROR al guardar: " + outPath);
+                                    }
+                                }
+                            }
+                        }
+
+                        // 2) SEGUNDO PASO: aplicar ops + colectar textos
                         if (root.contains("items") && root["items"].is_array()) {
                             for (const auto& it : root["items"]) {
                                 const std::string ik = it.value("kind", "");
                                 if (ik == "ops") {
-                                    total.created += ApplyOpsFromJson(it).created;
-                                    total.modified += ApplyOpsFromJson(it).modified;
-                                    total.removed += ApplyOpsFromJson(it).removed;
+                                    OpCounts c = ApplyOpsFromJson(it);
+                                    total.created += c.created;
+                                    total.modified += c.modified;
+                                    total.removed += c.removed;
                                 }
                                 else if (ik == "text") {
                                     texts.push_back(it.value("message", ""));
                                 }
-                                // NOTA: por ahora ignoramos assets dentro de bundle (versión inicial)
                             }
                         }
 
-                        // Si hubo cambios, resumimos en la burbuja "typing".
+                        // 3) Mensaje en la burbuja "typing"
                         if (total.created || total.modified || total.removed) {
                             typingBubble.text = "Listo: "
                                 + std::to_string(total.created) + " creadas, "
                                 + std::to_string(total.modified) + " modificadas, "
                                 + std::to_string(total.removed) + " eliminadas.";
-                            // Y si además hay textos, los agregamos como mensajes aparte
-                            for (auto& t : texts) {
-                                if (!t.empty())
-                                    m_History.push_back({ Role::Assistant, t, false });
-                            }
+                            for (auto& t : texts) if (!t.empty()) m_History.push_back({ Role::Assistant, t, false });
                         }
                         else {
-                            // Si NO hubo ops, usamos el primer texto como respuesta principal
                             if (!texts.empty()) typingBubble.text = texts.front();
-                            // y el resto, como burbujas adicionales
-                            for (size_t i = 1; i < texts.size(); ++i) {
-                                if (!texts[i].empty())
-                                    m_History.push_back({ Role::Assistant, texts[i], false });
-                            }
-                            if (texts.empty()) {
-                                typingBubble.text = "No hubo cambios ni mensajes.";
-                            }
+                            for (size_t i = 1; i < texts.size(); ++i)
+                                if (!texts[i].empty()) m_History.push_back({ Role::Assistant, texts[i], false });
+                            if (texts.empty()) typingBubble.text = "No hubo cambios ni mensajes.";
                         }
                     }
                     else {
