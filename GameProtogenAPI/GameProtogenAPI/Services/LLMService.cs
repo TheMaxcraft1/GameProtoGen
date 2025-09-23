@@ -85,7 +85,7 @@ namespace GameProtogenAPI.Services
 
         public async Task<string> BuildEditPlanXmlAsync(string userPrompt, string sceneJson, CancellationToken ct = default)
         {
-            var system = """
+            var system = """"
                 Eres un analista de escenas 2D de plataformas para un editor de niveles.
                 Interpreta el texto del usuario + la escena y devuelve SOLO un <plan> con
                 <agregar/>, <modificar/>, <eliminar/> (pueden estar vacíos).
@@ -99,10 +99,20 @@ namespace GameProtogenAPI.Services
                 - Ten en cuenta la posición y tamaño ( ancho y largo ) del jugador (entidad tipo "player"). Crealas un poco más anchas que el jugador.
                 - Crea plataformas horizontales, no inclinadas.
                 - Ponlas separadas entre sí por un espacio horizontal de al menos 32 pixeles (no pegadas) y en distintas alturas.
-
+                
+                REGLAS EXTRA (TEXTURAS):
+                - Si el prompt incluye un bloque [ASSETS] con líneas tipo "ASSETk:Assets/.../file.png"
+                  y el usuario pidió aplicarlas (ej. "aplicala al player", "a las 5 plataformas azules"),
+                  entonces:
+                  * Para entidades nuevas en <agregar>, agrega atributo texturePath="Assets/.../file.png" (elige el ASSET correcto).
+                  * Para entidades existentes, crea items en <modificar> con:
+                      <item id="X" propiedad="texturePath" valor="Assets/.../file.png"/>
+                - Usa ids reales si los menciona el usuario. Si no se mencionan, identifica por tipo ("player", "platform") o por color/tamaño cuando sea obvio.
+                - Mantén coords en múltiplos de 32. No devuelvas nada fuera de <plan>...
+                """;
 
                 No devuelvas nada fuera de <plan>...</plan>.
-                """;
+                """";
 
             var user = $"""
                 <task>
@@ -180,12 +190,22 @@ namespace GameProtogenAPI.Services
                   - set_component (para mutar datos de un componente existente):
                     {"op":"set_component","component":"Sprite","entity":id,"value":{"colorHex":"#RRGGBBAA"|"color":{r,g,b,a}?,"size":[w,h]?}}
                     {"op":"set_component","component":"Texture2D","entity":id,"value":{"path":"Assets/.../file.png"}}
+                
+                REGLAS PARA TEXTURAS:
+                - Si un ítem en <modificar> tiene propiedad="texturePath", emite:
+                  {"op":"set_component","component":"Texture2D","entity":ID,"value":{"path":"<valor>"}}
+                - Si una entidad en <agregar> trae atributo texturePath, además del "spawn_box" correspondiente,
+                  emite otro:
+                  {"op":"set_component","component":"Texture2D","entity":<id_asignado_si_aplica_o_si_el_plan_lo_da>,"value":{"path":"<texturePath>"}}
+                  (Si no hay ID asignado en el plan para la nueva entidad, omite este paso.)
+                - Si el usuario pidió “aplicar al player” y el plan lo refleja en <modificar> con texturePath, aplica solo a ese ID.
+                - Mantén EXACTOS los nombres de campos.
 
                 REGLAS ESTRICTAS DE FORMATO:
                 - NUNCA uses "entities". NUNCA agrupes varios IDs en una sola operación.
                 - Si el plan menciona múltiples entidades, genera N operaciones separadas (una por entidad).
                 - Mantén los nombres de campos EXACTOS.
-                - Si hay un bloque [ASSETS] en el prompt, asigna **texturePath** a las plataformas nuevas (puede ser la misma ruta para todas si aplica).
+                - Si hay un bloque [ASSETS] en el prompt, asigna **value.path** a las plataformas nuevas (puede ser la misma ruta para todas si aplica).
                 - Convierte cualquier color por nombre o formato RGBA a "colorHex" #RRGGBBAA.
                 - Cuando muevas/ubiques plataformas, si aplicara, usa múltiplos de 32.
                 - No incluyas comentarios, ni texto fuera del JSON.
@@ -201,79 +221,79 @@ namespace GameProtogenAPI.Services
             // JSON Schema que incluye set_component (acepta entity o entities)
             var schema = """
             {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
                 "ops": {
-                    "type": "array",
-                    "minItems": 0,
-                    "items": {
+                  "type": "array",
+                  "minItems": 0,
+                  "items": {
                     "oneOf": [
-                        { "$ref": "#/$defs/spawn_box" },
-                        { "$ref": "#/$defs/set_transform" },
-                        { "$ref": "#/$defs/remove_entity" },
-                        { "$ref": "#/$defs/set_component" }
+                      { "$ref": "#/$defs/spawn_box" },
+                      { "$ref": "#/$defs/set_transform" },
+                      { "$ref": "#/$defs/remove_entity" },
+                      { "$ref": "#/$defs/set_component" }
                     ]
-                    }
+                  }
                 }
-                },
-                "required": ["ops"],
-                "$defs": {
+              },
+              "required": ["ops"],
+              "$defs": {
                 "vec2": {
-                    "type": "array",
-                    "items": { "type": "number" },
-                    "minItems": 2,
-                    "maxItems": 2
+                  "type": "array",
+                  "items": { "type": "number" },
+                  "minItems": 2,
+                  "maxItems": 2
                 },
                 "colorObj": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
                     "r": { "type": "integer", "minimum": 0, "maximum": 255 },
                     "g": { "type": "integer", "minimum": 0, "maximum": 255 },
                     "b": { "type": "integer", "minimum": 0, "maximum": 255 },
                     "a": { "type": "integer", "minimum": 0, "maximum": 255 }
-                    },
-                    "required": ["r","g","b"]
+                  },
+                  "required": ["r","g","b"]
                 },
                 "spawn_box": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
                     "op": { "type": "string", "enum": ["spawn_box"] },
                     "pos": { "$ref": "#/$defs/vec2" },
                     "size": { "$ref": "#/$defs/vec2" },
                     "colorHex": { "type": "string", "pattern": "^#([A-Fa-f0-9]{8}|[A-Fa-f0-9]{6})$" }
-                    },
-                    "required": ["op","pos","size"]
+                  },
+                  "required": ["op","pos","size"]
                 },
                 "set_transform": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
                     "op": { "type": "string", "enum": ["set_transform"] },
                     "entity": { "type": "integer", "minimum": 1 },
                     "position": { "$ref": "#/$defs/vec2" },
                     "scale": { "$ref": "#/$defs/vec2" },
                     "rotation": { "type": "number" }
-                    },
-                    "required": ["op","entity"]
+                  },
+                  "required": ["op","entity"]
                 },
                 "remove_entity": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
                     "op": { "type": "string", "enum": ["remove_entity"] },
                     "entity": { "type": "integer", "minimum": 1 }
-                    },
-                    "required": ["op","entity"]
+                  },
+                  "required": ["op","entity"]
                 },
                 "set_component": {
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
                     "op": { "type": "string", "enum": ["set_component"] },
-                    "component": { "type": "string", "enum": ["Sprite","Texture2D"] }, // <- agregado Texture2D
+                    "component": { "type": "string", "enum": ["Sprite","Texture2D"] },
                     "entity": { "type": "integer", "minimum": 1 },
                     "value": {
                       "type": "object",
@@ -282,13 +302,13 @@ namespace GameProtogenAPI.Services
                         "colorHex": { "type": "string", "pattern": "^#([A-Fa-f0-9]{8}|[A-Fa-f0-9]{6})$" },
                         "color": { "$ref": "#/$defs/colorObj" },
                         "size": { "$ref": "#/$defs/vec2" },
-                        "path": { "type": "string" } // <- para Texture2D
+                        "path": { "type": "string" }
                       }
                     }
                   },
                   "required": ["op","component","entity","value"]
                 }
-                }
+              }
             }
             """;
 
@@ -423,10 +443,10 @@ namespace GameProtogenAPI.Services
         private static string RemoveJsonComments(string s)
         {
             if (string.IsNullOrEmpty(s)) return s;
-            // Quitar // ... (hasta fin de línea)
+            // quitar // ... al final de línea (modo multilínea)
             s = System.Text.RegularExpressions.Regex.Replace(
                     s, @"(?m)//.*?$", string.Empty);
-            // Quitar /* ... */ (multilínea)
+            // quitar /* ... */ en bloque (modo singleline)
             s = System.Text.RegularExpressions.Regex.Replace(
                     s, @"/\*.*?\*/", string.Empty, System.Text.RegularExpressions.RegexOptions.Singleline);
             return s.Trim();

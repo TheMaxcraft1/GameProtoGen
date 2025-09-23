@@ -120,11 +120,10 @@ namespace GameProtogenAPI.AI.Orchestration
                     var augmentedPrompt = prompt;
                     if (assetPaths.Count > 0)
                     {
-                        // Bloque para el planner/synthesizer:
-                        // indicar que debe usar texturePath en las plataformas nuevas
                         augmentedPrompt += "\n\n[ASSETS]\n";
-                        foreach (var p in assetPaths) augmentedPrompt += $"- {p}\n";
-                        augmentedPrompt += "Usa estas texturas para las plataformas nuevas (texturePath).";
+                        for (int i = 0; i < assetPaths.Count; i++)
+                            augmentedPrompt += $"- ASSET{i}:{assetPaths[i]}\n";
+                        augmentedPrompt += "Si el usuario pidió aplicarlas, usa estos ASSETs como texturePath en el plan (para entidades existentes en <modificar> y para nuevas en <agregar>).";
                     }
                     var json = await RunSceneEditAsync(augmentedPrompt, sceneJson, ct);
                     items.Add(JsonDocument.Parse(json).RootElement.Clone());
@@ -249,6 +248,24 @@ namespace GameProtogenAPI.AI.Orchestration
 
         private static string WrapOps(string opsJson)
         {
+            static string TrimToOuter(string s)
+            {
+                if (string.IsNullOrWhiteSpace(s)) return "{}";
+                int i = s.IndexOf('{'); int j = s.LastIndexOf('}');
+                return (i >= 0 && j >= i) ? s.Substring(i, j - i + 1) : s;
+            }
+
+            opsJson = (opsJson ?? "").Trim();
+            // por si viniera con fences o texto extra
+            if (opsJson.StartsWith("```"))
+            {
+                var nl = opsJson.IndexOf('\n');
+                if (nl >= 0) opsJson = opsJson[(nl + 1)..];
+                var last = opsJson.LastIndexOf("```", StringComparison.Ordinal);
+                if (last >= 0) opsJson = opsJson[..last];
+            }
+            opsJson = TrimToOuter(opsJson);
+
             using var input = JsonDocument.Parse(opsJson);
             using var ms = new MemoryStream();
             using (var w = new Utf8JsonWriter(ms))

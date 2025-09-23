@@ -51,13 +51,13 @@ namespace GameProtogenAPI.AI.AgentPlugins
                 return JsonSerializer.Serialize(new { kind = "text", message = "El modelo no devolvió datos de imagen." });
 
             var fileName = MakeSafeFileName($"{DateTime.UtcNow:yyyyMMdd_HHmmssfff}.png");
+            var path = $"Assets/Generated/{fileName}";
             var b64 = Convert.ToBase64String(bytes);
-
-            // DEVOLVEMOS base64 para que el CLIENTE persista en Assets/Generated/.
             return JsonSerializer.Serialize(new
             {
                 kind = "asset",
                 fileName,
+                path, // <--- NUEVO
                 data = b64
             });
         }
