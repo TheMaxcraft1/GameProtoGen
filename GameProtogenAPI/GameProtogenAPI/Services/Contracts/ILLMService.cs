@@ -14,5 +14,8 @@
         /// <summary> Responde preguntas de diseño </summary>
         Task<string> AskDesignAsync(string userQuestion, CancellationToken ct = default);
 
+        /// <summary> Genera assets (imágenes) </summary>
+        Task<string> GenerateAssetAsync(string prompt, CancellationToken ct = default);
+
     }
 }

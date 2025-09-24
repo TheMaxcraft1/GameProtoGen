@@ -1,5 +1,6 @@
 ﻿using GameProtogenAPI.Services.Contracts;
 using OpenAI.Chat;
+using OpenAI.Images;
 using System.Xml.Linq;
 
 namespace GameProtogenAPI.Services
@@ -8,11 +9,13 @@ namespace GameProtogenAPI.Services
     {
         private readonly ChatClient _mini;
         private readonly ILogger<LLMService> _logger;
+        private readonly ImageClient _images;
 
-        public LLMService(ChatClient mini, ILogger<LLMService> logger)
+        public LLMService(ChatClient mini, ILogger<LLMService> logger, ImageClient images)
         {
             _mini = mini;
             _logger = logger;
+            _images = images;
         }
 
         public async Task<string> RouteAsync(string userPrompt, string sceneJson, CancellationToken ct = default)
@@ -398,7 +401,50 @@ namespace GameProtogenAPI.Services
                 : text!;
         }
 
-        // --- Helpers ---
+        public async Task<string> GenerateAssetAsync(string prompt, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(prompt))
+                return System.Text.Json.JsonSerializer.Serialize(new { kind = "text", message = "Descripción vacía." });
+
+#pragma warning disable OPENAI001
+            var options = new ImageGenerationOptions
+            {
+                Size = GeneratedImageSize.W1024xH1024,
+                Quality = GeneratedImageQuality.Medium,
+                Background = GeneratedImageBackground.Transparent
+            };
+#pragma warning restore OPENAI001
+
+            GeneratedImage img;
+            try
+            {
+                var gen = await _images.GenerateImageAsync(prompt, options, ct);
+                img = gen.Value;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Fallo generando imagen");
+                return System.Text.Json.JsonSerializer.Serialize(new { kind = "text", message = $"No pude generar la imagen: {ex.Message}" });
+            }
+
+            byte[] bytes = await GetBytesAsync(img, ct);
+            if (bytes.Length == 0)
+                return System.Text.Json.JsonSerializer.Serialize(new { kind = "text", message = "El modelo no devolvió datos de imagen." });
+
+            var fileName = MakeSafeFileName($"{DateTime.UtcNow:yyyyMMdd_HHmmssfff}.png");
+            var path = $"Assets/Generated/{fileName}"; // mismo contrato que venía usando el cliente
+            var b64 = Convert.ToBase64String(bytes);
+
+            return System.Text.Json.JsonSerializer.Serialize(new
+            {
+                kind = "asset",
+                fileName,
+                path,
+                data = b64
+            });
+        }
+
+        #region HELPERS
         private static string ExtractPlanXml(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
@@ -451,5 +497,35 @@ namespace GameProtogenAPI.Services
                     s, @"/\*.*?\*/", string.Empty, System.Text.RegularExpressions.RegexOptions.Singleline);
             return s.Trim();
         }
+
+        private static async Task<byte[]> GetBytesAsync(GeneratedImage img, CancellationToken ct)
+        {
+            var bytesProp = typeof(GeneratedImage).GetProperty("ImageBytes");
+            if (bytesProp?.GetValue(img) is BinaryData bd)
+                return bd.ToArray();
+
+            var b64Prop = typeof(GeneratedImage).GetProperty("Base64Data");
+            if (b64Prop?.GetValue(img) is string b64 && !string.IsNullOrWhiteSpace(b64))
+            {
+                try { return Convert.FromBase64String(b64); } catch { }
+            }
+
+            var urlProp = typeof(GeneratedImage).GetProperty("Url");
+            if (urlProp?.GetValue(img) is Uri uri && uri.IsAbsoluteUri)
+            {
+                using var http = new HttpClient();
+                return await http.GetByteArrayAsync(uri, ct);
+            }
+
+            return Array.Empty<byte>();
+        }
+
+        private static string MakeSafeFileName(string name)
+        {
+            foreach (var c in Path.GetInvalidFileNameChars())
+                name = name.Replace(c, '_');
+            return name;
+        }
+        #endregion
     }
 }
