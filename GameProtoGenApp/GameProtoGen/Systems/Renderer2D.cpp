@@ -18,6 +18,10 @@ static std::shared_ptr<sf::Texture> GetTexture(const std::string& path) {
     return nullptr;
 }
 
+void Renderer2D::ClearTextureCache() {
+    s_TexCache.clear();
+}
+
 void Renderer2D::Draw(const Scene& scene, sf::RenderTarget& target) {
     for (const auto& e : scene.Entities()) {
         auto itT = scene.transforms.find(e.id);

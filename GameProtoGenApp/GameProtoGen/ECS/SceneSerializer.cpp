@@ -197,6 +197,12 @@ bool SceneSerializer::LoadFromJson(Scene& scene, const nlohmann::json& j) {
             pc.moveSpeed = jpc.value("moveSpeed", 500.f);
             pc.jumpSpeed = jpc.value("jumpSpeed", 900.f);
         }
+        if (je.contains("Texture2D")) {
+            auto& tx = scene.textures[id];
+            auto jx = je["Texture2D"];
+            if (jx.contains("path") && jx["path"].is_string())
+                tx.path = jx["path"].get<std::string>();
+        }
     }
     return true;
 }

@@ -10,6 +10,7 @@
 #include <imgui-SFML.h>
 #include <imgui_internal.h>
 #include <filesystem>
+#include <Systems/Renderer2D.h>
 
 // Helpers Files/Proyecto
 namespace {
@@ -111,6 +112,7 @@ namespace {
 
         bool ok = SceneSerializer::Load(*ctx.scene, path.string());
         FixSceneAfterLoad();
+        Renderer2D::ClearTextureCache();
 
         auto now = system_clock::now();
         std::time_t t = system_clock::to_time_t(now);

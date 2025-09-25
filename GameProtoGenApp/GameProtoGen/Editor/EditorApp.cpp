@@ -10,6 +10,7 @@
 #include "Net/ApiClient.h"
 #include "ImGuiLayer.h"
 #include <filesystem>
+#include <Systems/Renderer2D.h>
 
 // Helper: asegurar que hay un jugador “jugable”
 static void EnsurePlayable(Scene& scene, Entity& outSelected) {
@@ -18,6 +19,7 @@ static void EnsurePlayable(Scene& scene, Entity& outSelected) {
     // ¿Ya hay alguno?
     if (!scene.playerControllers.empty()) {
         playerId = scene.playerControllers.begin()->first;
+		Renderer2D::ClearTextureCache();
     }
 
     // Si no hay ninguno, elegimos una entidad existente o creamos una nueva
@@ -82,9 +84,10 @@ public:
         ctx.scene = std::make_shared<Scene>();
 
         bool loaded = false;
-        const char* kProjPath = "Saves/project.json";
+        const char* kProjPath = "Saves/scene.json";;
         if (std::filesystem::exists(kProjPath)) {
             loaded = SceneSerializer::Load(*ctx.scene, kProjPath);
+            Renderer2D::ClearTextureCache();
         }
 
         if (!loaded) {
