@@ -24,11 +24,12 @@ namespace GameProtogenAPI.AI.Orchestration
             var routeJson = await InvokeRouterAsync(prompt, sceneJson, ct);
 
             var agents = ParseAgentsOrDefault(routeJson);
+            var assetMode = ExtractAssetMode(routeJson);
             if (agents.Length <= 1)
-                return await ExecuteSingleAgentAsync(agents.First(), prompt, sceneJson, ct);
+                return await ExecuteSingleAgentAsync(agents.First(), prompt, sceneJson, ct, assetMode);
 
             // multi-agente → bundle
-            return await ExecuteAgentsBundleAsync(agents, prompt, sceneJson, ct);
+            return await ExecuteAgentsBundleAsync(agents, prompt, sceneJson, ct, assetMode);
         }
 
         // ───────────────────────── Router ─────────────────────────
@@ -77,20 +78,20 @@ namespace GameProtogenAPI.AI.Orchestration
         }
 
         // ───────────────────────── Ejecución single ─────────────────────────
-        private async Task<string> ExecuteSingleAgentAsync(string agent, string prompt, string sceneJson, CancellationToken ct)
+        private async Task<string> ExecuteSingleAgentAsync(string agent, string prompt, string sceneJson, CancellationToken ct, string? assetMode)
         {
             if (string.Equals(agent, "design_qa", StringComparison.OrdinalIgnoreCase))
                 return await RunDesignQaAsync(prompt, ct);
 
             if (string.Equals(agent, "asset_gen", StringComparison.OrdinalIgnoreCase))
-                return await RunAssetGenAsync(prompt, ct);
+                return await RunAssetGenAsync(prompt, assetMode, ct);
 
             // default: scene_edit
             return await RunSceneEditAsync(prompt, sceneJson, ct);
         }
 
         // ───────────────────────── Ejecución bundle ─────────────────────────
-        private async Task<string> ExecuteAgentsBundleAsync(string[] agents, string prompt, string sceneJson, CancellationToken ct)
+        private async Task<string> ExecuteAgentsBundleAsync(string[] agents, string prompt, string sceneJson, CancellationToken ct, string? assetMode)
         {
             var items = new List<JsonElement>();
             var assetPaths = new List<string>();
@@ -100,7 +101,7 @@ namespace GameProtogenAPI.AI.Orchestration
             {
                 if (string.Equals(a, "asset_gen", StringComparison.OrdinalIgnoreCase))
                 {
-                    var json = await RunAssetGenAsync(prompt, ct);
+                    var json = await RunAssetGenAsync(prompt, assetMode, ct);
                     var item = JsonDocument.Parse(json).RootElement.Clone();
                     items.Add(item);
                     assetPaths.AddRange(ExtractAssetPathsFromItem(item));
@@ -279,14 +280,17 @@ namespace GameProtogenAPI.AI.Orchestration
         }
 
         // ───────────────────────── Wrappers JSON ─────────────────────────
-        private async Task<string> RunAssetGenAsync(string prompt, CancellationToken ct)
+        private async Task<string> RunAssetGenAsync(string prompt, string? assetMode, CancellationToken ct)
         {
             try
             {
                 var json = await _kernel.InvokeAsync<string>(
                     pluginName: nameof(AssetGenPlugin),
                     functionName: "generate_asset",
-                    arguments: new() { ["prompt"] = prompt },
+                    arguments: new() { 
+                        ["prompt"] = prompt ,
+                        ["assetMode"] = assetMode ?? string.Empty
+                    },
                     cancellationToken: ct
                 );
                 return json ?? "{\"kind\":\"text\",\"message\":\"AssetGen devolvió vacío.\"}";
@@ -304,6 +308,22 @@ namespace GameProtogenAPI.AI.Orchestration
             if (item.TryGetProperty("path", out var p) && p.ValueKind == JsonValueKind.String)
                 return new[] { p.GetString()! };
             return Array.Empty<string>();
+        }
+
+        private static string? ExtractAssetMode(string routeJson)
+        {
+            try
+            {
+                using var rdoc = JsonDocument.Parse(string.IsNullOrWhiteSpace(routeJson) ? "{}" : routeJson);
+                if (rdoc.RootElement.TryGetProperty("asset_mode", out var m) && m.ValueKind == JsonValueKind.String)
+                {
+                    var s = m.GetString();
+                    if (string.Equals(s, "sprite", StringComparison.OrdinalIgnoreCase)) return "sprite";
+                    if (string.Equals(s, "texture", StringComparison.OrdinalIgnoreCase)) return "texture";
+                }
+            }
+            catch { }
+            return null;
         }
     }
 }

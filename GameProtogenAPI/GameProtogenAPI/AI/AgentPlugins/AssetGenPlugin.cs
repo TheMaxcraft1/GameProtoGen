@@ -21,9 +21,10 @@ namespace GameProtogenAPI.AI.AgentPlugins
         [Description("Genera una imagen (textura/sprite) y la devuelve en base64 para que el cliente la guarde localmente.")]
         public async Task<string> GenerateAsync(
             [Description("Descripción de la textura a generar")] string prompt,
+            [Description("Modo explícito: 'sprite' o 'texture' (opcional)")] string? assetMode = null,
             CancellationToken ct = default)
         {
-            return await _llm.GenerateAssetAsync(prompt, ct);
+            return await _llm.GenerateAssetAsync(prompt, assetMode, ct);
         }
     }
 }

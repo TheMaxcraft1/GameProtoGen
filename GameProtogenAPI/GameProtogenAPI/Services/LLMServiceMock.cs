@@ -243,5 +243,10 @@ namespace GameProtogenAPI.Services
         {
             throw new NotImplementedException();
         }
+
+        public Task<string> GenerateAssetAsync(string prompt, string? assetMode = null, CancellationToken ct = default)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

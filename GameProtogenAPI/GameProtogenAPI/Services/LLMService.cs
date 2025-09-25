@@ -32,9 +32,15 @@ namespace GameProtogenAPI.Services
                 Output JSON keys:
                   - "agents": array (execution order), unique, 1..3 items, subset of the above.
                   - "reason": short explanation (<= 200 chars).
+                  - "asset_mode": OPTIONAL string. REQUIRED if "asset_gen" is present.
+                enum: ["texture","sprite"]
                 Language: same as user.
 
                 Routing rules (IMPORTANT):
+                - If the user asks to generate an image/texture/sprite/tile:
+                    * include "asset_gen"
+                    * set "asset_mode" to "texture" when they want a MATERIAL / TILE / BACKGROUND that fills the canvas.
+                    * set "asset_mode" to "sprite"   when they want a cutout subject/object with transparent background.
                 - If the user asks to **generate** an image/texture/sprite/tile **AND** to **apply/use/set** it on existing/new entities,
                   return BOTH agents in this order: ["asset_gen","scene_edit"].
                   Examples: "generá una textura y aplicala al jugador", "quiero un sprite de mago y que se lo pongan al personaje".
@@ -58,7 +64,11 @@ namespace GameProtogenAPI.Services
                     "enum": ["scene_edit","design_qa","asset_gen"]
                   }
                 },
-                "reason": { "type": "string" }
+                "reason": { "type": "string" },
+                "asset_mode": {
+                  "type": "string",
+                  "enum": ["texture","sprite"]
+                }
               },
               "additionalProperties": false
             }
@@ -401,24 +411,57 @@ namespace GameProtogenAPI.Services
                 : text!;
         }
 
-        public async Task<string> GenerateAssetAsync(string prompt, CancellationToken ct = default)
+        public async Task<string> GenerateAssetAsync(string prompt, string? assetMode = null, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(prompt))
                 return System.Text.Json.JsonSerializer.Serialize(new { kind = "text", message = "Descripción vacía." });
+
+            // 1) Reglas cortas según modo (solo prefijo del prompt del usuario)
+            string rules = string.Empty;
+            if (string.Equals(assetMode, "texture", StringComparison.OrdinalIgnoreCase))
+            {
+                rules = """
+                    MODO TEXTURA:
+                    - Genera una TEXTURA 2D que LLENE COMPLETAMENTE el lienzo (sin zonas vacías).
+                    - SIN transparencia (alpha 255 en todos los píxeles).
+                    - Iluminación uniforme, sin viñeteo, sin texto ni logos.
+                    - NEGATIVOS: sin personas, sin personajes, sin objetos, sin escenas o fondos ilustrados.
+                    - Si aplica, que sea tileable/seamless.
+                    """;
+                        }
+            else if (string.Equals(assetMode, "sprite", StringComparison.OrdinalIgnoreCase))
+            {
+                rules = """
+                    MODO SPRITE:
+                    - Sprite con FONDO TRANSPARENTE (PNG RGBA).
+                    - Un único sujeto/objeto, centrado, recorte ajustado (pocos píxeles de margen).
+                    - NEGATIVOS: sin fondo/escena completa, sin suelo, sin texto ni logos.
+                    """;
+
+            }
+
+            var modelPrompt = string.IsNullOrEmpty(rules)
+                ? prompt
+                : $"{rules}\n\nPEDIDO DEL USUARIO:\n{prompt}";
 
 #pragma warning disable OPENAI001
             var options = new ImageGenerationOptions
             {
                 Size = GeneratedImageSize.W1024xH1024,
-                Quality = GeneratedImageQuality.Medium,
-                Background = GeneratedImageBackground.Transparent
+                Quality = GeneratedImageQuality.Medium,                
             };
+
+            if (string.Equals(assetMode, "sprite", StringComparison.OrdinalIgnoreCase))
+            {
+                // SPRITE => fondo transparente
+                options.Background = GeneratedImageBackground.Transparent;
+            }
 #pragma warning restore OPENAI001
 
             GeneratedImage img;
             try
             {
-                var gen = await _images.GenerateImageAsync(prompt, options, ct);
+                var gen = await _images.GenerateImageAsync(modelPrompt, options, ct);
                 img = gen.Value;
             }
             catch (Exception ex)
