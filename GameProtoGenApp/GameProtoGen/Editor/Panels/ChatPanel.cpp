@@ -345,14 +345,13 @@ void ChatPanel::SendCurrentPrompt() {
 }
 
 void ChatPanel::RenderHistory() {
-    const ImVec2 regionMin = ImGui::GetWindowPos();
-    const float maxWidth = ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x;
 
-    const float bubbleW = std::min(520.0f, maxWidth * 0.9f);
+    const float availW = ImGui::GetContentRegionAvail().x;        
+    const float bubbleW = std::min(520.0f, availW * 0.9f);
     const float pad = 8.0f;
     const float spacingY = 6.0f;
 
-    // Carga perezosa del icono de copiar
+    // Carga perezosa del icono de copiar (igual que antes)
     static sf::Texture s_CopyTex;
     static bool s_CopyOk = false;
     static bool s_CopyInit = false;
@@ -362,10 +361,7 @@ void ChatPanel::RenderHistory() {
         s_CopyTex.setSmooth(true);
     }
 
-    // Ventana de “copiado” por mensaje (segundos desde ImGui::GetTime())
     static std::vector<double> s_CopyUntil;
-
-    // Asegurar tamaño del vector estado
     if (s_CopyUntil.size() < m_History.size())
         s_CopyUntil.resize(m_History.size(), -1.0);
 
@@ -379,15 +375,9 @@ void ChatPanel::RenderHistory() {
         ImVec4 fg = isUser ? ImVec4(1, 1, 1, 1)
             : ImVec4(0.10f, 0.10f, 0.12f, 1.0f);
 
-        // Alineación: user a la derecha / assistant a la izquierda
-        float cursorY = ImGui::GetCursorPosY();
-        float startX = isUser ? (ImGui::GetWindowContentRegionMax().x - bubbleW)
-            : (ImGui::GetWindowContentRegionMin().x);
-        startX += ImGui::GetWindowPos().x;
+        float startX = isUser ? (availW - bubbleW) : 0.0f;
+        ImGui::SetCursorPosX(startX);
 
-        ImGui::SetCursorScreenPos(ImVec2(startX, regionMin.y + cursorY));
-
-        // Burbuja (child sin padding interno)
         ImGui::PushStyleColor(ImGuiCol_ChildBg, bg);
         ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -411,33 +401,29 @@ void ChatPanel::RenderHistory() {
         const float innerW = bubbleW - 2.0f * pad;
 
         if (!msg.typing) {
-            // Texto con wrap perfecto (sin multiline)
             ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + innerW);
             ImGui::TextUnformatted(msg.text.c_str());
             ImGui::PopTextWrapPos();
 
-            // Solo botón copiar en respuestas del asistente
             if (!isUser) {
                 ImGui::Dummy(ImVec2(0, pad * 0.5f));
 
-                // Alinear a la derecha
                 float x0 = ImGui::GetCursorPosX();
                 float y0 = ImGui::GetCursorPosY();
 
-                // Medimos el icono
                 float iconH = 18.0f;
                 ImVec2 iconSz = s_CopyOk ? FitIconHeight(s_CopyTex, iconH) : ImVec2(40.0f, iconH);
 
-                // Posicionar a la derecha
+                // ✅ Posicionar el botón a la derecha en local
                 ImGui::SetCursorPosX(x0 + innerW - iconSz.x);
 
-                // Tooltip dinámico: “Copiar” o “Copiado”
                 const double now = (double)ImGui::GetTime();
                 const bool showCopied = (s_CopyUntil[i] >= 0.0 && now < s_CopyUntil[i]);
                 const char* tooltip = showCopied ? "Copiado" : "Copiar";
 
                 bool clicked = false;
                 if (s_CopyOk) {
+                    // Este helper usa SetCursorScreenPos internamente, pero ya dentro de este child.
                     clicked = IconButtonFromTexture(
                         (std::string("##cpy_") + std::to_string(i)).c_str(),
                         s_CopyTex,
@@ -446,14 +432,13 @@ void ChatPanel::RenderHistory() {
                     );
                 }
                 else {
-                    // Fallback si no cargó el icono
                     clicked = ImGui::SmallButton((std::string("Copiar##cpy_") + std::to_string(i)).c_str());
                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
                 }
 
                 if (clicked) {
                     ImGui::SetClipboardText(msg.text.c_str());
-                    s_CopyUntil[i] = now + 1.5; // mostrar “Copiado” 1.5s
+                    s_CopyUntil[i] = now + 1.5;
                 }
 
                 // Bajar el cursor debajo del icono
@@ -461,15 +446,13 @@ void ChatPanel::RenderHistory() {
             }
         }
         else {
-            // Animación de “escribiendo…”
             int dots = 1 + (int)(ImGui::GetTime() * 3.0) % 3;
             static const char* DOTS[4] = { "", ".", "..", "..." };
             ImGui::TextUnformatted(DOTS[dots]);
             ImGui::Dummy(ImVec2(0, pad * 0.5f));
         }
 
-        // Padding inferior dentro de la burbuja
-        ImGui::Dummy(ImVec2(0, pad));
+        ImGui::Dummy(ImVec2(0, pad)); // padding inferior
 
         ImGui::PopStyleColor(); // text
         ImGui::EndChild();
@@ -478,11 +461,10 @@ void ChatPanel::RenderHistory() {
         ImGui::PopStyleVar();   // ChildRounding
         ImGui::PopStyleColor(); // ChildBg
 
-        // Espacio entre mensajes
+        // Espacio entre mensajes (local)
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + spacingY);
     }
 }
-
 // Aplica ops + devuelve conteo (creadas / modificadas / eliminadas)
 ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
     OpCounts counts;
