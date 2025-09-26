@@ -111,6 +111,36 @@ public:
             EnsureGround(*ctx.scene);
             EnsurePlayable(*ctx.scene, ctx.selected);
         }
+
+        {
+            auto& ctx = SceneContext::Get();
+            if (ctx.scene) {
+                // 1) Asegurar que exista la entidad 3 (si no, crearla con Transform)
+                bool exists = false;
+                for (auto& e : ctx.scene->Entities()) {
+                    if (e.id == 3) { exists = true; break; }
+                }
+                if (!exists) {
+                    Entity e = ctx.scene->CreateEntityWithId(3);
+                    // Un Transform es necesario para que ScriptSystem considere esta entidad
+                    ctx.scene->transforms[e.id] = Transform{ {800.f, 450.f}, {1.f,1.f}, 0.f };
+                    // (Opcional) algo visible:
+                    ctx.scene->sprites[e.id] = Sprite{ {80.f,80.f}, sf::Color(255,128,0,255) };
+                    // (Opcional) collider si querés que colisione:
+                    ctx.scene->colliders[e.id] = Collider{ {40.f,40.f}, {0.f,0.f} };
+                }
+
+                // 2) Adjuntar el script
+                {
+                    EntityID target = 3;
+                    auto& sc = ctx.scene->scripts[target];
+                    sc.path = "Assets/Scripts/mover.lua";
+                    sc.inlineCode.clear();
+                    sc.loaded = false; // forzar on_spawn al entrar en Play
+                }
+            }
+        }
+
     }
 };
 
