@@ -80,13 +80,27 @@ void ViewportPanel::OnUpdate(const gp::Timestep& dt) {
 void ViewportPanel::OnGuiRender() {
     auto& ctx = SceneContext::Get();
 
+    //TODO: REVISAR ESTO!
     auto TogglePlay = [&]() {
+        bool wasPlaying = m_Playing;
         m_Playing = !m_Playing;
+
         m_Dragging = false;
         m_DragEntity = 0;
         m_Panning = false;
+
         SceneContext::Get().runtime.playing = m_Playing;
         AppendLog(std::string("Runtime: ") + (m_Playing ? "Play" : "Pause"));
+
+        // Solo al pasar de pausa a play:
+        if (!wasPlaying && m_Playing) {
+            Systems::ScriptSystem::ResetVM();   // <- limpia entornos
+            auto& ctx2 = SceneContext::Get();
+            if (ctx2.scene) {
+                for (auto& [id, sc] : ctx2.scene->scripts)
+                    sc.loaded = false;          // <- fuerza on_spawn 1 vez en esta sesión
+            }
+        }
         };
 
     // Hotkey F5

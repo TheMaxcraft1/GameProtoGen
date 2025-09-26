@@ -19,6 +19,10 @@ static std::string LoadFileUtf8(const std::string& p) {
     return ss.str();
 }
 
+void ScriptSystem::ResetVM() {
+    if (g_vm) g_vm->Reset();
+}
+
 void ScriptSystem::Update(Scene& scene, float dt) {
     auto& vm = VM();
     vm.BindScene(scene);

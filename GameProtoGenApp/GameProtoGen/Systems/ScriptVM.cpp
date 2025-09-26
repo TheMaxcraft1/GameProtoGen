@@ -13,6 +13,10 @@ void ScriptVM::BindScene(Scene& scene) {
     m_scene = &scene;
 }
 
+void ScriptVM::Reset() {
+    m_envs.clear();
+}
+
 bool ScriptVM::EnsureEnv(EntityID id) {
     if (m_envs.find(id) != m_envs.end()) return true;
 

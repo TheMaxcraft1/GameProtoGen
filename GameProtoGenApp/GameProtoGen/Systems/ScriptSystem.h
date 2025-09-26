@@ -6,6 +6,7 @@ namespace Systems {
     class ScriptSystem {
     public:
         static void Update(Scene& scene, float dt);
+        static void ResetVM();
     private:
         static ScriptVM& VM(); // singleton simple
     };

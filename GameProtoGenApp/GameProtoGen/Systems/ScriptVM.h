@@ -15,7 +15,7 @@ public:
     bool RunFor(EntityID id, const std::string& code, const std::string& pathHint, std::string& err);
     bool CallOnSpawn(EntityID id, std::string& err);
     bool CallOnUpdate(EntityID id, float dt, std::string& err);
-
+    void Reset();
     void BindScene(Scene& scene);
 
 private:
