@@ -35,3 +35,9 @@ struct PlayerController {
     float moveSpeed = 500.f;  // px/s
     float jumpSpeed = 900.f;  // px/s (hacia arriba = negativo si y+ va hacia abajo)
 };
+
+struct Script {
+    std::string path;       // Ruta a .lua (opcional)
+    std::string inlineCode; // Código embebido (opcional)
+    bool loaded = false;    // ¿ya se corrió on_spawn?
+};

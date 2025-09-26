@@ -65,6 +65,13 @@ static json dump_impl(const Scene& scene) {
                 je["Texture2D"] = { {"path", tx.path} };
             }
         }
+        if (auto it = scene.scripts.find(id); it != scene.scripts.end()) {
+            const auto& sc = it->second;
+            nlohmann::json js;
+            if (!sc.path.empty())       js["path"] = sc.path;
+            if (!sc.inlineCode.empty()) js["inlineCode"] = sc.inlineCode;
+            if (!js.empty())            je["Script"] = js; // solo si hay algo que persistir
+        }
         j["entities"].push_back(je);
     }
     return j;
@@ -138,6 +145,13 @@ bool SceneSerializer::Load(Scene& scene, const std::string& path) {
             if (jx.contains("path") && jx["path"].is_string())
                 tx.path = jx["path"].get<std::string>();
         }
+        if (je.contains("Script")) {
+            auto& sc = scene.scripts[id];
+            const auto& js = je["Script"];
+            sc.path = js.value("path", "");
+            sc.inlineCode = js.value("inlineCode", "");
+            sc.loaded = false; // fuerza re-ejecutar on_spawn en runtime
+        }
     }
     return true;
 }
@@ -202,6 +216,13 @@ bool SceneSerializer::LoadFromJson(Scene& scene, const nlohmann::json& j) {
             auto jx = je["Texture2D"];
             if (jx.contains("path") && jx["path"].is_string())
                 tx.path = jx["path"].get<std::string>();
+        }
+        if (je.contains("Script")) {
+            auto& sc = scene.scripts[id];
+            const auto& js = je["Script"];
+            sc.path = js.value("path", "");
+            sc.inlineCode = js.value("inlineCode", "");
+            sc.loaded = false;
         }
     }
     return true;

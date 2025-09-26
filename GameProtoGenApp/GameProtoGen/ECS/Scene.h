@@ -22,6 +22,7 @@ public:
     std::unordered_map<EntityID, Collider> colliders;
     std::unordered_map<EntityID, Physics2D> physics;
     std::unordered_map<EntityID, PlayerController> playerControllers;
+    std::unordered_map<EntityID, Script> scripts;
 
     const std::vector<Entity>& Entities() const { return m_Entities; }
 

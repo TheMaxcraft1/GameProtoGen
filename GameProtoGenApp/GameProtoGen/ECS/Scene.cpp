@@ -21,6 +21,7 @@ void Scene::DestroyEntity(Entity e) {
     colliders.erase(e.id);
     textures.erase(e.id);
     physics.erase(e.id);
+    scripts.erase(e.id);
     playerControllers.erase(e.id);
     // borrar de la lista de entidades (O(n), suficiente para MVP)
     for (auto it = m_Entities.begin(); it != m_Entities.end(); ++it) {

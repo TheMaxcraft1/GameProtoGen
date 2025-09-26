@@ -2,6 +2,7 @@
 #include "Runtime/SceneContext.h"
 #include "Systems/Renderer2D.h"
 #include "Systems/PhysicsSystem.h"
+#include "Systems/ScriptSystem.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -68,7 +69,7 @@ void ViewportPanel::OnUpdate(const gp::Timestep& dt) {
     if (!ctx.scene) return;
 
     if (m_Playing) {
-        // En play, simulamos (sin drag del editor)
+        Systems::ScriptSystem::Update(*ctx.scene, dt.dt);
         Systems::PlayerControllerSystem::Update(*ctx.scene, dt.dt);
         Systems::PhysicsSystem::Update(*ctx.scene, dt.dt);
         Systems::CollisionSystem::SolveGround(*ctx.scene, /*groundY*/ m_VirtH);

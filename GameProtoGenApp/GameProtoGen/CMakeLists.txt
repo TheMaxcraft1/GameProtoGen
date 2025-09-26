@@ -11,6 +11,32 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 include(FetchContent)
 
+# --- Lua 5.4 ---
+FetchContent_Declare(lua
+  GIT_REPOSITORY https://github.com/lua/lua.git
+  GIT_TAG v5.4.7
+)
+FetchContent_MakeAvailable(lua)
+add_library(lua_static ${lua_SOURCE_DIR}/lapi.c ${lua_SOURCE_DIR}/lauxlib.c
+    ${lua_SOURCE_DIR}/lbaselib.c ${lua_SOURCE_DIR}/lcode.c ${lua_SOURCE_DIR}/lcorolib.c
+    ${lua_SOURCE_DIR}/lctype.c ${lua_SOURCE_DIR}/ldblib.c ${lua_SOURCE_DIR}/ldebug.c
+    ${lua_SOURCE_DIR}/ldo.c ${lua_SOURCE_DIR}/ldump.c ${lua_SOURCE_DIR}/lfunc.c
+    ${lua_SOURCE_DIR}/lgc.c ${lua_SOURCE_DIR}/linit.c ${lua_SOURCE_DIR}/liolib.c
+    ${lua_SOURCE_DIR}/llex.c ${lua_SOURCE_DIR}/lmathlib.c ${lua_SOURCE_DIR}/lmem.c
+    ${lua_SOURCE_DIR}/loadlib.c ${lua_SOURCE_DIR}/lobject.c ${lua_SOURCE_DIR}/lopcodes.c
+    ${lua_SOURCE_DIR}/loslib.c ${lua_SOURCE_DIR}/lparser.c ${lua_SOURCE_DIR}/lstate.c
+    ${lua_SOURCE_DIR}/lstring.c ${lua_SOURCE_DIR}/lstrlib.c ${lua_SOURCE_DIR}/ltable.c
+    ${lua_SOURCE_DIR}/ltablib.c ${lua_SOURCE_DIR}/ltm.c ${lua_SOURCE_DIR}/lundump.c
+    ${lua_SOURCE_DIR}/lutf8lib.c ${lua_SOURCE_DIR}/lvm.c ${lua_SOURCE_DIR}/lzio.c)
+target_include_directories(lua_static PUBLIC ${lua_SOURCE_DIR})
+
+# --- sol2 (header-only) ---
+FetchContent_Declare(sol2
+  GIT_REPOSITORY https://github.com/ThePhD/sol2.git
+  GIT_TAG v3.3.0
+)
+FetchContent_MakeAvailable(sol2)
+
 # ---------- SFML 3 ----------
 # (Desactiva tests/ejemplos para acelerar)
 set(SFML_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -79,6 +105,8 @@ add_executable(GameProtoGen
     # Systems
     Systems/Renderer2D.cpp
     Systems/PhysicsSystem.cpp
+    Systems/ScriptVM.cpp
+    Systems/ScriptSystem.cpp
 
     # Editor
     Editor/EditorApp.cpp
@@ -93,7 +121,7 @@ add_executable(GameProtoGen
     # ImGui extra
     ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
     
- )
+)
 
  target_sources(GameProtoGen PRIVATE
     ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
@@ -106,6 +134,7 @@ target_link_libraries(GameProtoGen PRIVATE
   ImGui-SFML::ImGui-SFML
   nlohmann_json::nlohmann_json
   cpr::cpr
+  lua_static
 )
 
 # Copia toda la carpeta Assets al directorio donde queda la .exe (Debug/Release)
@@ -122,5 +151,6 @@ endif()
 target_include_directories(GameProtoGen PRIVATE 
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${IMGUI_DIR}/misc/cpp
+    ${sol2_SOURCE_DIR}/include
 )
 
