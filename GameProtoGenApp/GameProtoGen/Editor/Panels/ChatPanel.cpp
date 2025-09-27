@@ -19,6 +19,17 @@
 
 using json = nlohmann::json;
 
+static bool SaveTextToFile(const std::string& outPath, const std::string& text) {
+    try {
+        std::filesystem::create_directories(std::filesystem::path(outPath).parent_path());
+        std::ofstream ofs(outPath, std::ios::binary);
+        if (!ofs) return false;
+        ofs.write(text.data(), static_cast<std::streamsize>(text.size()));
+        return ofs.good();
+    }
+    catch (...) { return false; }
+}
+
 // ---------------- base64 decode helper (con soporte de padding '=') ----------------
 static std::vector<unsigned char> Base64Decode(const std::string& input) {
     // -1: inválido/ignorar, -2: '=' padding
@@ -243,6 +254,51 @@ void ChatPanel::OnGuiRender() {
                             ViewportPanel::AppendLog("[ASSET] ERROR al guardar la imagen.");
                         }
                     }
+                    else if (kind == "script") {
+                        const std::string fileName = root.value("fileName", "script.lua");
+                        const std::string code = root.value("code", "");
+                        // sanitizar nombre
+                        std::string safeName = fileName;
+                        for (char& ch : safeName) {
+                            if (ch == '/' || ch == '\\' || ch == ':' || ch == '*' || ch == '?' || ch == '"' || ch == '<' || ch == '>' || ch == '|') ch = '_';
+                        }
+                        const std::string outPath = "Assets/Scripts/" + safeName;
+
+                        if (!code.empty() && SaveTextToFile(outPath, code)) {
+                            // elegir target: seleccionado -> player -> crear entidad nueva
+                            auto& ctx = SceneContext::Get();
+                            EntityID target = 0;
+                            if (ctx.selected) target = ctx.selected.id;
+                            else if (ctx.scene && !ctx.scene->playerControllers.empty())
+                                target = ctx.scene->playerControllers.begin()->first;
+
+                            if (!target && ctx.scene) {
+                                // creamos una “caja” para alojar el script
+                                Entity e = ctx.scene->CreateEntity();
+                                ctx.scene->transforms[e.id] = Transform{ ctx.cameraCenter, {1.f,1.f}, 0.f };
+                                ctx.scene->sprites[e.id] = Sprite{ {64.f,64.f}, sf::Color(255,255,255,255) };
+                                ctx.scene->colliders[e.id] = Collider{ {32.f,32.f}, {0.f,0.f} };
+                                target = e.id;
+                                ctx.selected = e;
+                            }
+
+                            if (ctx.scene && target) {
+                                auto& sc = ctx.scene->scripts[target];
+                                sc.path = outPath;
+                                sc.inlineCode.clear();
+                                sc.loaded = false; // fuerza re-run en próximo Play
+                            }
+
+                            typingBubble.text = std::string("Script guardado en:\n") + std::filesystem::absolute(outPath).string()
+                                + (target ? ("\nAsignado a entidad id=" + std::to_string(target)) : "");
+                            ViewportPanel::AppendLog(std::string("[SCRIPT] Guardado: ") + outPath
+                                + (target ? ("  -> id=" + std::to_string(target)) : ""));
+                        }
+                        else {
+                            typingBubble.text = "No pude guardar el script (payload vacío o error de escritura).";
+                            ViewportPanel::AppendLog("[SCRIPT] ERROR al guardar script.");
+                        }
+                    }
                     else if (kind == "bundle") {
                         OpCounts total{};
                         std::vector<std::string> texts;
@@ -265,6 +321,41 @@ void ChatPanel::OnGuiRender() {
                                     }
                                     else {
                                         ViewportPanel::AppendLog("[ASSET] ERROR al guardar: " + outPath);
+                                    }
+                                }
+                                if (ik == "script") {
+                                    const std::string fileName = it.value("fileName", "script.lua");
+                                    const std::string code = it.value("code", "");
+                                    std::string safeName = fileName;
+                                    for (char& ch : safeName) {
+                                        if (ch == '/' || ch == '\\' || ch == ':' || ch == '*' || ch == '?' || ch == '"' || ch == '<' || ch == '>' || ch == '|') ch = '_';
+                                    }
+                                    const std::string outPath = "Assets/Scripts/" + safeName;
+                                    if (!code.empty() && SaveTextToFile(outPath, code)) {
+                                        ViewportPanel::AppendLog(std::string("[SCRIPT] Guardado: ") + outPath);
+                                        // Asignación automática (misma regla que arriba)
+                                        auto& ctx = SceneContext::Get();
+                                        EntityID target = 0;
+                                        if (ctx.selected) target = ctx.selected.id;
+                                        else if (ctx.scene && !ctx.scene->playerControllers.empty())
+                                            target = ctx.scene->playerControllers.begin()->first;
+                                        if (!target && ctx.scene) {
+                                            Entity e = ctx.scene->CreateEntity();
+                                            ctx.scene->transforms[e.id] = Transform{ ctx.cameraCenter, {1.f,1.f}, 0.f };
+                                            ctx.scene->sprites[e.id] = Sprite{ {64.f,64.f}, sf::Color(255,255,255,255) };
+                                            ctx.scene->colliders[e.id] = Collider{ {32.f,32.f}, {0.f,0.f} };
+                                            target = e.id;
+                                            ctx.selected = e;
+                                        }
+                                        if (ctx.scene && target) {
+                                            auto& sc = ctx.scene->scripts[target];
+                                            sc.path = outPath;
+                                            sc.inlineCode.clear();
+                                            sc.loaded = false;
+                                        }
+                                    }
+                                    else {
+                                        ViewportPanel::AppendLog("[SCRIPT] ERROR al guardar (bundle).");
                                     }
                                 }
                             }
@@ -465,6 +556,7 @@ void ChatPanel::RenderHistory() {
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + spacingY);
     }
 }
+
 // Aplica ops + devuelve conteo (creadas / modificadas / eliminadas)
 ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
     OpCounts counts;

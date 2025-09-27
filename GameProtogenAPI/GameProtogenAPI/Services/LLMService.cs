@@ -28,7 +28,7 @@ namespace GameProtogenAPI.Services
                   - "scene_edit": create/move/remove/edit entities, colors, transforms, level layout, collisions, etc.
                   - "design_qa": conceptual game design (level design, difficulty, pacing, coyote time, input buffering, UX).
                   - "asset_gen": generate an image/texture/sprite/tile (e.g., "imagen", "textura", "sprite", "tile", "png", "jpg", "render", "generate image/texture").
-                  - "lua_gen": generate Lua scripts for the built-in VM (ecs.*, on_spawn/on_update), behaviors/AI/movement.
+                  - "script_gen": generate Lua scripts for the built-in VM (ecs.*, on_spawn/on_update), behaviors/AI/movement.
 
                 Output JSON keys:
                   - "agents": array (execution order), unique, 1..3 items, subset of the above.
@@ -46,10 +46,10 @@ namespace GameProtogenAPI.Services
                   return BOTH agents in this order: ["asset_gen","scene_edit"].
                   Examples: "generá una textura y aplicala al jugador", "quiero un sprite de mago y que se lo pongan al personaje".
                 - If the user asks to generate Lua code / script / comportamiento / IA / movimiento automático:
-                    * include "lua_gen".
+                    * include "scene_edit".
                     * If they also ask to APPLY/attach that script to entities (existing or new), return BOTH:
-                      ["lua_gen","scene_edit"] (in that order).
-                - If only code generation (no apply/use intent), return ONLY ["lua_gen"].
+                      ["script_gen","scene_edit"] (in that order).
+                - If only code generation (no apply/use intent), return ONLY ["scene_edit"].
                 - If the user ONLY asks for generation (no apply/use intent), return ONLY ["asset_gen"].
                 - If unsure between scene_edit and design_qa and the prompt is mostly conceptual, prefer "design_qa".
                 - If the user asks for scene edits without asset generation, return ONLY ["scene_edit"].
@@ -494,60 +494,58 @@ namespace GameProtogenAPI.Services
 
         public async Task<string> GenerateLuaAsync(string userPrompt, string sceneJson, CancellationToken ct = default)
         {
-            // --- Sistema: enseña al modelo tu API/reflection ---
             var system = """
-                        You are a Lua code generator for a small 2D engine.
-                        Output ONLY JSON:
-                          { "kind":"lua", "fileName":"<suggested>.lua", "code":"<lua source>" }
+                            You are a Lua code generator for a small 2D engine.
+                            Output ONLY JSON:
+                              { "kind":"script", "fileName":"<suggested>.lua", "code":"<lua source>" }
 
-                        Target VM (Lua 5.4, sol2). Scripts run in an environment with:
-                          - Global: this_id (uint)
-                          - Optional callbacks:
-                              function on_spawn() end
-                              function on_update(dt) end   -- dt in seconds (float)
+                            Target VM (Lua 5.4, sol2). Scripts run in an environment with:
+                              - Global: this_id (uint)
+                              - Optional callbacks:
+                                  function on_spawn() end
+                                  function on_update(dt) end   -- dt in seconds (float)
 
-                        Engine API (exposed as global table `ecs`):
-                          -- Entity ops
-                          ecs.create() -> uint                   -- returns new entity id
-                          ecs.destroy(id:uint)
-                          ecs.first_with(comp:string) -> uint    -- "Transform","Sprite","Collider","Physics2D","PlayerController"
-                          -- GET: returns table or nil
-                          ecs.get(id, "Transform") => { position={x,y}, scale={x,y}, rotation=deg }
-                          ecs.get(id, "Sprite")    => { size={x,y}, color={r,g,b,a} }
-                          ecs.get(id, "Collider")  => { halfExtents={x,y}, offset={x,y} }
-                          ecs.get(id, "Physics2D") => { velocity={x,y}, gravity:number, gravityEnabled:boolean, onGround:boolean }
-                          ecs.get(id, "PlayerController") => { moveSpeed:number, jumpSpeed:number }
-                          -- SET: partial updates supported; missing fields unchanged
-                          ecs.set(id, "Transform", { position={x,y}?, scale={x,y}?, rotation=deg? })
-                          ecs.set(id, "Sprite",    { size={x,y}?, color={r,g,b,a}? })
-                          ecs.set(id, "Collider",  { halfExtents={x,y}?, offset={x,y}? })
-                          ecs.set(id, "Physics2D", { velocity={x,y}?, gravity:number?, gravityEnabled:boolean?, onGround:boolean? })
-                          ecs.set(id, "PlayerController", { moveSpeed:number?, jumpSpeed:number? })
+                            Engine API (exposed as global table `ecs`):
+                              -- Entity ops
+                              ecs.create() -> uint
+                              ecs.destroy(id:uint)
+                              ecs.first_with(comp:string) -> uint    -- "Transform","Sprite","Collider","Physics2D","PlayerController"
+                              -- GET
+                              ecs.get(id, "Transform") => { position={x,y}, scale={x,y}, rotation=deg }
+                              ecs.get(id, "Sprite")    => { size={x,y}, color={r,g,b,a} }
+                              ecs.get(id, "Collider")  => { halfExtents={x,y}, offset={x,y} }
+                              ecs.get(id, "Physics2D") => { velocity={x,y}, gravity:number, gravityEnabled:boolean, onGround:boolean }
+                              ecs.get(id, "PlayerController") => { moveSpeed:number, jumpSpeed:number }
+                              -- SET (partial)
+                              ecs.set(id, "Transform", { position={x,y}?, scale={x,y}?, rotation=deg? })
+                              ecs.set(id, "Sprite",    { size={x,y}?, color={r,g,b,a}? })
+                              ecs.set(id, "Collider",  { halfExtents={x,y}?, offset={x,y}? })
+                              ecs.set(id, "Physics2D", { velocity={x,y}?, gravity:number?, gravityEnabled:boolean?, onGround:boolean? })
+                              ecs.set(id, "PlayerController", { moveSpeed:number?, jumpSpeed:number? })
 
-                        Rules:
-                          - Always define at least one of: on_spawn, on_update.
-                          - Keep code sandboxed: DO NOT use require, io.*, os.*, debug.*, loadstring.
-                          - Use multiples of 32 for positions when placing platforms.
-                          - Prefer reading/writing through ecs.get/ecs.set (no direct globals).
-                          - If you need the player, try: local pid = ecs.first_with("PlayerController").
-                          - Keep it concise and readable; minimal state stored in upvalues.
-                          - Language: match user's language in comments only. Code stays in Lua.
+                            Rules:
+                              - Always define at least one of: on_spawn, on_update.
+                              - No require/io/os/debug/loadstring.
+                              - Use multiples of 32 for platform placement.
+                              - Prefer ecs.get/ecs.set.
+                              - If you need the player: local pid = ecs.first_with("PlayerController")
+                              - Comments can match user language; code is Lua.
 
-                        Deliver JSON only (no code fences, no extra text).
-                    """;
+                            Deliver JSON only (no fences, no extra text).
+                        """;
 
             var schema = """
-    {
-      "type": "object",
-      "required": ["kind","fileName","code"],
-      "additionalProperties": false,
-      "properties": {
-        "kind": { "type": "string", "const": "lua" },
-        "fileName": { "type": "string" },
-        "code": { "type": "string" }
-      }
-    }
-    """;
+                        {
+                          "type": "object",
+                          "required": ["kind","fileName","code"],
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": { "type": "string", "const": "script" },
+                            "fileName": { "type": "string" },
+                            "code": { "type": "string" }
+                          }
+                        }
+                        """;
 
 #pragma warning disable OPENAI001
             var options = new ChatCompletionOptions
@@ -562,24 +560,24 @@ namespace GameProtogenAPI.Services
 #pragma warning restore OPENAI001
 
             var user = $"""
-        User request:
-        {userPrompt}
+                User request:
+                {userPrompt}
 
-        Context (scene JSON):
-        {sceneJson}
-        """;
+                Context (scene JSON):
+                {sceneJson}
+                """;
 
             var completion = await _mini.CompleteChatAsync(
                 [new SystemChatMessage(system), new UserChatMessage(user)],
                 options, ct);
 
             var json = completion.Value.Content?[0].Text ?? "";
-            // saneo muy leve reutilizando utilidades:
             json = StripCodeFences(json);
             json = TrimToOuterJsonObject(json);
             _logger.LogInformation("LUA response: {Json}", json);
             return json;
         }
+
 
         #region HELPERS
         private static string ExtractPlanXml(string raw)

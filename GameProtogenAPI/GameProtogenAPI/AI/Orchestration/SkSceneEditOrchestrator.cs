@@ -86,8 +86,8 @@ namespace GameProtogenAPI.AI.Orchestration
             if (string.Equals(agent, "asset_gen", StringComparison.OrdinalIgnoreCase))
                 return await RunAssetGenAsync(prompt, assetMode, ct);
 
-            if (string.Equals(agent, "lua_gen", StringComparison.OrdinalIgnoreCase))
-                return await RunLuaGenAsync(prompt, sceneJson, ct);
+            if (string.Equals(agent, "script_gent", StringComparison.OrdinalIgnoreCase))
+                return await RunScriptGenAsync(prompt, sceneJson, ct);
 
             // default: scene_edit
             return await RunSceneEditAsync(prompt, sceneJson, ct);
@@ -110,8 +110,17 @@ namespace GameProtogenAPI.AI.Orchestration
                     assetPaths.AddRange(ExtractAssetPathsFromItem(item));
                 }
             }
+            // 1.5) script_gen (Lua) — se agrega tal cual al bundle
+            foreach (var a in agents)
+            {
+                if (string.Equals(a, "script_gen", StringComparison.OrdinalIgnoreCase))
+                {
+                    var json = await RunScriptGenAsync(prompt, sceneJson, ct);
+                    items.Add(JsonDocument.Parse(json).RootElement.Clone());
+                }
+            }
 
-            // 2) Luego corre scene_edit (inyectando assets si existen)
+            // 2) design_qa y scene_edit (inyectando assets si hay)
             foreach (var a in agents)
             {
                 if (string.Equals(a, "design_qa", StringComparison.OrdinalIgnoreCase))
@@ -236,12 +245,12 @@ namespace GameProtogenAPI.AI.Orchestration
             catch { return false; }
         }
 
-        private async Task<string> RunLuaGenAsync(string prompt, string sceneJson, CancellationToken ct)
+        private async Task<string> RunScriptGenAsync(string prompt, string sceneJson, CancellationToken ct)
         {
             try
             {
                 var json = await _kernel.InvokeAsync<string>(
-                    pluginName: "LuaGenPlugin",
+                    pluginName: nameof(ScriptGenPlugin),
                     functionName: "generate_lua",
                     arguments: new() { ["prompt"] = prompt, ["sceneJson"] = sceneJson },
                     cancellationToken: ct

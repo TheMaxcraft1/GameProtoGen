@@ -248,5 +248,10 @@ namespace GameProtogenAPI.Services
         {
             throw new NotImplementedException();
         }
+
+        public Task<string> GenerateLuaAsync(string userPrompt, string sceneJson, CancellationToken ct = default)
+        {
+            throw new NotImplementedException();
+        }
     }
 }
