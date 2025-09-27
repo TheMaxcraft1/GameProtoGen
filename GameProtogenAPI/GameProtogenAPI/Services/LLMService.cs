@@ -98,7 +98,7 @@ namespace GameProtogenAPI.Services
 
         public async Task<string> BuildEditPlanXmlAsync(string userPrompt, string sceneJson, CancellationToken ct = default)
         {
-            var system = """"
+            var system = """
                 Eres un analista de escenas 2D de plataformas para un editor de niveles.
                 Interpreta el texto del usuario + la escena y devuelve SOLO un <plan> con
                 <agregar/>, <modificar/>, <eliminar/> (pueden estar vacíos).
@@ -122,10 +122,9 @@ namespace GameProtogenAPI.Services
                       <item id="X" propiedad="texturePath" valor="Assets/.../file.png"/>
                 - Usa ids reales si los menciona el usuario. Si no se mencionan, identifica por tipo ("player", "platform") o por color/tamaño cuando sea obvio.
                 - Mantén coords en múltiplos de 32. No devuelvas nada fuera de <plan>...
-                """;
 
                 No devuelvas nada fuera de <plan>...</plan>.
-                """";
+                """;
 
             var user = $"""
                 <task>
