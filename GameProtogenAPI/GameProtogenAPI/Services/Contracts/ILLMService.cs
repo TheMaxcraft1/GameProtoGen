@@ -17,5 +17,8 @@
         /// <summary> Genera assets (imágenes) </summary>
         Task<string> GenerateAssetAsync(string prompt, string? assetMode = null, CancellationToken ct = default);
 
+        /// <summary> Paso 3: user + escena → LUA </summary>
+        Task<string> GenerateLuaAsync(string userPrompt, string sceneJson, CancellationToken ct = default);
+
     }
 }

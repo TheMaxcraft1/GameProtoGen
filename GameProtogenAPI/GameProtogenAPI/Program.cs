@@ -37,6 +37,7 @@ builder.Services.AddSingleton(sp =>
     kernel.Plugins.AddFromType<GameDesignAdvisorPlugin>(serviceProvider: sp);
     kernel.Plugins.AddFromType<RouterPlugin>(serviceProvider: sp);
     kernel.Plugins.AddFromType<AssetGenPlugin>(serviceProvider: sp);
+    kernel.Plugins.AddFromType<ScriptGenPlugin>(serviceProvider: sp);
 
     return kernel;
 });

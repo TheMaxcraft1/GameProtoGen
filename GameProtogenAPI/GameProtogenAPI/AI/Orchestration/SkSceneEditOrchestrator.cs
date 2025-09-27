@@ -86,6 +86,9 @@ namespace GameProtogenAPI.AI.Orchestration
             if (string.Equals(agent, "asset_gen", StringComparison.OrdinalIgnoreCase))
                 return await RunAssetGenAsync(prompt, assetMode, ct);
 
+            if (string.Equals(agent, "lua_gen", StringComparison.OrdinalIgnoreCase))
+                return await RunLuaGenAsync(prompt, sceneJson, ct);
+
             // default: scene_edit
             return await RunSceneEditAsync(prompt, sceneJson, ct);
         }
@@ -231,6 +234,24 @@ namespace GameProtogenAPI.AI.Orchestration
                 return doc.RootElement.TryGetProperty("ops", out _);
             }
             catch { return false; }
+        }
+
+        private async Task<string> RunLuaGenAsync(string prompt, string sceneJson, CancellationToken ct)
+        {
+            try
+            {
+                var json = await _kernel.InvokeAsync<string>(
+                    pluginName: "LuaGenPlugin",
+                    functionName: "generate_lua",
+                    arguments: new() { ["prompt"] = prompt, ["sceneJson"] = sceneJson },
+                    cancellationToken: ct
+                );
+                return json ?? "{\"kind\":\"text\",\"message\":\"LuaGen devolvió vacío.\"}";
+            }
+            catch (Exception ex)
+            {
+                return WrapText($"Error en lua_gen: {ex.Message}");
+            }
         }
 
         // ───────────────────────── Wrappers JSON ─────────────────────────
