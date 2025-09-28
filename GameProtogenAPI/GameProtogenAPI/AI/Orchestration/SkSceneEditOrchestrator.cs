@@ -86,7 +86,7 @@ namespace GameProtogenAPI.AI.Orchestration
             if (string.Equals(agent, "asset_gen", StringComparison.OrdinalIgnoreCase))
                 return await RunAssetGenAsync(prompt, assetMode, ct);
 
-            if (string.Equals(agent, "script_gent", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(agent, "script_gen", StringComparison.OrdinalIgnoreCase))
                 return await RunScriptGenAsync(prompt, sceneJson, ct);
 
             // default: scene_edit

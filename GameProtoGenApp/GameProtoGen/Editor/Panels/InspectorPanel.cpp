@@ -20,11 +20,87 @@ static inline void ClampDockedMinWidth(float minW) {
     }
 }
 
+static std::string NormalizeToAssetsOrAbsolute(const std::string& chosen)
+{
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::path chosenAbs = fs::absolute(chosen, ec);
+    if (ec) return chosen; // si falla, devolvé lo que vino
+
+    fs::path assetsRoot = fs::absolute("Assets", ec);
+    if (!ec)
+    {
+        fs::path rel = fs::relative(chosenAbs, assetsRoot, ec);
+        bool hasTraversal = false;
+        for (const auto& part : rel) if (part == "..") { hasTraversal = true; break; }
+        if (!ec && !rel.empty() && !hasTraversal)
+            return (fs::path("Assets") / rel).generic_string();
+    }
+    return chosenAbs.generic_string();
+}
+
+static inline bool HasLuaExtension(const std::string& p) {
+    auto dot = p.find_last_of('.');
+    if (dot == std::string::npos) return false;
+    std::string ext = p.substr(dot + 1);
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+    return (ext == "lua");
+}
+
+static void ApplyNewScriptPath(Script& sc, const std::string& newPath) {
+    sc.path = newPath;
+    sc.inlineCode.clear();
+    sc.loaded = false; // forzar recarga al ejecutar
+}
+
+static void HandleScriptDropPayload(Script& sc)
+{
+    const ImGuiPayload* p = nullptr;
+
+    auto takePath = [&](const std::string& s) {
+        if (s.empty()) return;
+        std::string norm = NormalizeToAssetsOrAbsolute(s);
+        if (HasLuaExtension(norm))
+            ApplyNewScriptPath(sc, norm);
+        };
+
+    if ((p = ImGui::AcceptDragDropPayload("SCRIPT_PATH")) ||
+        (p = ImGui::AcceptDragDropPayload("FILE_PATH")))
+    {
+        std::string dropped((const char*)p->Data, p->DataSize);
+        if (!dropped.empty() && dropped.back() == '\0') dropped.pop_back();
+        takePath(dropped);
+        return;
+    }
+    if ((p = ImGui::AcceptDragDropPayload("text/uri-list")))
+    {
+        std::string uris((const char*)p->Data, p->DataSize);
+        if (!uris.empty() && uris.back() == '\0') uris.pop_back();
+        size_t eol = uris.find_first_of("\r\n");
+        std::string first = (eol == std::string::npos) ? uris : uris.substr(0, eol);
+
+        auto strip_prefix = [](const std::string& s, const char* pref) {
+            size_t n = std::strlen(pref);
+            return s.rfind(pref, 0) == 0 ? s.substr(n) : s;
+            };
+        first = strip_prefix(first, "file://");
+#ifdef _WIN32
+        if (first.size() > 3 && first[0] == '/' && std::isalpha((unsigned char)first[1]) && first[2] == ':')
+            first.erase(first.begin());
+#endif
+        takePath(first);
+        return;
+    }
+}
+
 static void DrawTexture2DEditor(Scene& scene, Entity e) {
     if (!e) return;
 
-    // Config rápido: elegí cómo mostrar la ruta
-    constexpr float kInputRatio = 0.70f; // % del ancho para el campo (el resto queda para el botón)
+    // 🔐 Aísla IDs de todos los widgets de esta sección
+    ImGui::PushID("Texture2D");
+    ImGui::PushID((int)e.id);
+
+    constexpr float kInputRatio = 0.70f;
 
     bool hasTex = scene.textures.contains(e.id);
     if (ImGui::CollapsingHeader("Texture2D", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -35,6 +111,8 @@ static void DrawTexture2DEditor(Scene& scene, Entity e) {
                 scene.textures[e.id] = Texture2D{}; // path vacío
             }
             ImGui::EndDisabled();
+            ImGui::PopID(); // e.id
+            ImGui::PopID(); // "Texture2D"
             return;
         }
 
@@ -44,14 +122,12 @@ static void DrawTexture2DEditor(Scene& scene, Entity e) {
         {
             const float totalW = ImGui::GetContentRegionAvail().x;
             const float btnW = ImGui::GetFrameHeight();  // cuadrado
-            const float inputW = std::max(120.0f, totalW * kInputRatio - 1.0f); // un poco más chico
-            const float spacer = 0.0f; // sin espacio para que quede pegado
+            const float inputW = std::max(120.0f, totalW * kInputRatio - 1.0f);
+            const float spacer = 0.0f;
 
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(spacer, ImGui::GetStyle().ItemSpacing.y));
-
             ImGui::SetNextItemWidth(inputW);
-            ImGuiInputTextFlags flags = ImGuiInputTextFlags_ReadOnly;
-            ImGui::InputTextWithHint("##path", "Assets/...", &tex.path, flags);
+            ImGui::InputTextWithHint("##path", "Assets/...", &tex.path, ImGuiInputTextFlags_ReadOnly);
 
             ImGui::SameLine(0.0f, spacer);
             bool pick = ImGui::Button("...", ImVec2(btnW, 0));
@@ -67,7 +143,7 @@ static void DrawTexture2DEditor(Scene& scene, Entity e) {
                     (int)(sizeof(filters) / sizeof(filters[0])),
                     filters,
                     "Imágenes",
-                    0 // una sola selección
+                    0
                 );
                 if (selected && *selected) {
                     try {
@@ -79,14 +155,10 @@ static void DrawTexture2DEditor(Scene& scene, Entity e) {
                         std::string newPath = chosenAbs.generic_string();
                         if (!ec) {
                             fs::path rel = fs::relative(chosenAbs, assetsRoot, ec);
-
                             bool hasTraversal = false;
-                            for (const auto& part : rel) {
-                                if (part == "..") { hasTraversal = true; break; }
-                            }
-                            if (!ec && !rel.empty() && !hasTraversal) {
+                            for (const auto& part : rel) { if (part == "..") { hasTraversal = true; break; } }
+                            if (!ec && !rel.empty() && !hasTraversal)
                                 newPath = (fs::path("Assets") / rel).generic_string();
-                            }
                         }
 
                         std::string oldPath = tex.path;
@@ -95,9 +167,7 @@ static void DrawTexture2DEditor(Scene& scene, Entity e) {
                             Renderer2D::InvalidateTexture(oldPath);
                         Renderer2D::InvalidateTexture(newPath);
                     }
-                    catch (...) {
-                        // no romper la UI si falla algo
-                    }
+                    catch (...) {}
                 }
             }
 
@@ -105,26 +175,23 @@ static void DrawTexture2DEditor(Scene& scene, Entity e) {
             if (ImGui::Button("Quitar")) {
                 scene.textures.erase(e.id);
                 ImGui::EndDisabled();
+                ImGui::PopID(); // e.id
+                ImGui::PopID(); // "Texture2D"
                 return;
             }
         }
 
         // Botones de utilidad
-        if (ImGui::Button("Recargar")) {
-            Renderer2D::InvalidateTexture(tex.path);
-        }
+        if (ImGui::Button("Recargar")) { Renderer2D::InvalidateTexture(tex.path); }
         ImGui::SameLine();
-        if (ImGui::Button("Limpiar caché")) {
-            Renderer2D::ClearTextureCache();
-        }
+        if (ImGui::Button("Limpiar caché")) { Renderer2D::ClearTextureCache(); }
 
         // Preview
         if (!tex.path.empty()) {
             auto sp = Renderer2D::GetTextureCached(tex.path);
             if (sp && sp->getSize().x > 0 && sp->getSize().y > 0) {
                 const auto sz = sp->getSize();
-                const float tw = (float)sz.x;
-                const float th = (float)sz.y;
+                const float tw = (float)sz.x, th = (float)sz.y;
 
                 const float availW = std::max(32.0f, ImGui::GetContentRegionAvail().x);
                 const float maxH = 220.0f;
@@ -134,10 +201,14 @@ static void DrawTexture2DEditor(Scene& scene, Entity e) {
                 ImGui::Separator();
                 ImGui::Text("Preview (%u x %u)", sz.x, sz.y);
 
+                // 🆔 Child único por entidad (evita choque con otros BeginChild)
+                char childId[32];
+                std::snprintf(childId, sizeof(childId), "##texprev_%u", e.id);
+
 #if IMGUI_VERSION_NUM >= 19000
-                ImGui::BeginChild("##texprev", ImVec2(0, maxH), ImGuiChildFlags_Border, ImGuiWindowFlags_NoScrollbar);
+                ImGui::BeginChild(childId, ImVec2(0, maxH), ImGuiChildFlags_Border, ImGuiWindowFlags_NoScrollbar);
 #else
-                ImGui::BeginChild("##texprev", ImVec2(0, maxH), true, ImGuiWindowFlags_NoScrollbar);
+                ImGui::BeginChild(childId, ImVec2(0, maxH), true, ImGuiWindowFlags_NoScrollbar);
 #endif
                 const float innerW = ImGui::GetContentRegionAvail().x + ImGui::GetStyle().WindowPadding.x * 2;
                 const float padX = std::max(0.0f, (innerW - drawSz.x) * 0.5f);
@@ -152,13 +223,109 @@ static void DrawTexture2DEditor(Scene& scene, Entity e) {
             }
         }
 
-        if (tex.path != originalPath && !originalPath.empty()) {
+        if (tex.path != originalPath && !originalPath.empty())
             Renderer2D::InvalidateTexture(originalPath);
-        }
 
         ImGui::EndDisabled();
     }
+
+    ImGui::PopID(); // e.id
+    ImGui::PopID(); // "Texture2D"
 }
+
+static void DrawScriptEditor(Scene& scene, Entity e) {
+    if (!e) return;
+
+    // 🔐 Aísla IDs de los widgets de Script
+    ImGui::PushID("Script");
+    ImGui::PushID((int)e.id);
+
+    const bool hasScript = scene.scripts.contains(e.id);
+    if (ImGui::CollapsingHeader("Script", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::BeginDisabled(false);
+
+        if (!hasScript) {
+            if (ImGui::Button("Agregar componente Script")) {
+                scene.scripts[e.id] = Script{}; // sin path, inline vacío
+            }
+            ImGui::EndDisabled();
+            ImGui::PopID(); ImGui::PopID();
+            return;
+        }
+
+        auto& sc = scene.scripts[e.id];
+        const std::string originalPath = sc.path;
+
+        // Input read-only + "..." pegado
+        {
+            constexpr float kInputRatio = 0.70f;
+            const float totalW = ImGui::GetContentRegionAvail().x;
+            const float btnW = ImGui::GetFrameHeight();
+            const float inputW = std::max(120.0f, totalW * kInputRatio - 1.0f);
+            const float spacer = 0.0f;
+
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(spacer, ImGui::GetStyle().ItemSpacing.y));
+            ImGui::SetNextItemWidth(inputW);
+
+            std::string display = sc.path.empty() ? (sc.inlineCode.empty() ? "" : "(inline)") : sc.path;
+            ImGui::InputTextWithHint("##script_path", "Assets/Scripts/...", &display, ImGuiInputTextFlags_ReadOnly);
+
+            // Si usás drag&drop de archivos para scripts, podés manejarlo acá:
+            if (ImGui::BeginDragDropTarget()) {
+                HandleScriptDropPayload(sc); // tu helper existente
+                ImGui::EndDragDropTarget();
+            }
+
+            ImGui::SameLine(0.0f, spacer);
+            bool pick = ImGui::Button("...", ImVec2(btnW, 0));
+            ImGui::PopStyleVar();
+
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Elegir archivo .lua");
+
+            if (pick) {
+                const char* filters[] = { "*.lua" };
+                const char* selected = tinyfd_openFileDialog(
+                    "Elegí un script (.lua)",
+                    "Assets\\Scripts",
+                    (int)(sizeof(filters) / sizeof(filters[0])),
+                    filters,
+                    "Lua script",
+                    0
+                );
+                if (selected && *selected) {
+                    try { ApplyNewScriptPath(sc, NormalizeToAssetsOrAbsolute(selected)); }
+                    catch (...) {}
+                }
+            }
+
+            ImGui::SameLine();
+            if (ImGui::Button("Quitar")) {
+                scene.scripts.erase(e.id);
+                ImGui::EndDisabled();
+                ImGui::PopID(); ImGui::PopID();
+                return;
+            }
+        }
+
+        // Utilidad
+        if (ImGui::Button("Recargar")) { sc.loaded = false; }
+        ImGui::SameLine();
+        if (ImGui::Button("Limpiar ruta")) { sc.path.clear(); sc.loaded = false; }
+
+        if (!sc.path.empty())
+            ImGui::TextDisabled("Asignado: %s", sc.path.c_str());
+        else if (!sc.inlineCode.empty())
+            ImGui::TextDisabled("Usando código inline (%zu chars).", sc.inlineCode.size());
+        else
+            ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "Sin script asignado.");
+
+        ImGui::EndDisabled();
+    }
+
+    ImGui::PopID(); // e.id
+    ImGui::PopID(); // "Script"
+}
+
 
 void InspectorPanel::OnGuiRender() {
     auto& ctx = SceneContext::Get();
@@ -340,6 +507,7 @@ void InspectorPanel::OnGuiRender() {
 
         if (ctx.scene && ctx.selected) {
             DrawTexture2DEditor(*ctx.scene, ctx.selected);
+            DrawScriptEditor(*ctx.scene, ctx.selected);
         }
 
         // -------------------------

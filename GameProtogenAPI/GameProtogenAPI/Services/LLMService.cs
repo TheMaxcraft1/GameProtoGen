@@ -46,10 +46,10 @@ namespace GameProtogenAPI.Services
                   return BOTH agents in this order: ["asset_gen","scene_edit"].
                   Examples: "generá una textura y aplicala al jugador", "quiero un sprite de mago y que se lo pongan al personaje".
                 - If the user asks to generate Lua code / script / comportamiento / IA / movimiento automático:
-                    * include "scene_edit".
+                    * include "script_gen".
                     * If they also ask to APPLY/attach that script to entities (existing or new), return BOTH:
                       ["script_gen","scene_edit"] (in that order).
-                - If only code generation (no apply/use intent), return ONLY ["scene_edit"].
+                - If only code generation (no apply/use intent), return ONLY ["script_gen"].
                 - If the user ONLY asks for generation (no apply/use intent), return ONLY ["asset_gen"].
                 - If unsure between scene_edit and design_qa and the prompt is mostly conceptual, prefer "design_qa".
                 - If the user asks for scene edits without asset generation, return ONLY ["scene_edit"].
