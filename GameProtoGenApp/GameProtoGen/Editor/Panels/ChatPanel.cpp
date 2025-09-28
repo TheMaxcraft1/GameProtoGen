@@ -226,6 +226,8 @@ void ChatPanel::OnGuiRender() {
                     const nlohmann::json& root = *res.data;
                     const std::string kind = root.value("kind", "");
 
+                    ViewportPanel::AppendLog("[DBG]: " + kind);
+
                     if (kind == "ops") {
                         OpCounts c = ApplyOpsFromJson(root);
                         typingBubble.text = "Listo: "
@@ -258,42 +260,20 @@ void ChatPanel::OnGuiRender() {
                     else if (kind == "script") {
                         const std::string fileName = root.value("fileName", "script.lua");
                         const std::string code = root.value("code", "");
+
                         // sanitizar nombre
                         std::string safeName = fileName;
                         for (char& ch : safeName) {
-                            if (ch == '/' || ch == '\\' || ch == ':' || ch == '*' || ch == '?' || ch == '"' || ch == '<' || ch == '>' || ch == '|') ch = '_';
+                            if (ch == '/' || ch == '\\' || ch == ':' || ch == '*' || ch == '?' ||
+                                ch == '"' || ch == '<' || ch == '>' || ch == '|') ch = '_';
                         }
                         const std::string outPath = "Assets/Scripts/" + safeName;
 
                         if (!code.empty() && SaveTextToFile(outPath, code)) {
-                            // elegir target: seleccionado -> player -> crear entidad nueva
-                            auto& ctx = SceneContext::Get();
-                            EntityID target = 0;
-                            if (ctx.selected) target = ctx.selected.id;
-                            else if (ctx.scene && !ctx.scene->playerControllers.empty())
-                                target = ctx.scene->playerControllers.begin()->first;
-
-                            if (!target && ctx.scene) {
-                                // creamos una “caja” para alojar el script
-                                Entity e = ctx.scene->CreateEntity();
-                                ctx.scene->transforms[e.id] = Transform{ ctx.cameraCenter, {1.f,1.f}, 0.f };
-                                ctx.scene->sprites[e.id] = Sprite{ {64.f,64.f}, sf::Color(255,255,255,255) };
-                                ctx.scene->colliders[e.id] = Collider{ {32.f,32.f}, {0.f,0.f} };
-                                target = e.id;
-                                ctx.selected = e;
-                            }
-
-                            if (ctx.scene && target) {
-                                auto& sc = ctx.scene->scripts[target];
-                                sc.path = outPath;
-                                sc.inlineCode.clear();
-                                sc.loaded = false; // fuerza re-run en próximo Play
-                            }
-
-                            typingBubble.text = std::string("Script guardado en:\n") + std::filesystem::absolute(outPath).string()
-                                + (target ? ("\nAsignado a entidad id=" + std::to_string(target)) : "");
-                            ViewportPanel::AppendLog(std::string("[SCRIPT] Guardado: ") + outPath
-                                + (target ? ("  -> id=" + std::to_string(target)) : ""));
+                            typingBubble.text = std::string("Script guardado en:\n")
+                                + std::filesystem::absolute(outPath).string()
+                                + "\n(No asignado a ninguna entidad.)";
+                            ViewportPanel::AppendLog(std::string("[SCRIPT] Guardado: ") + outPath);
                         }
                         else {
                             typingBubble.text = "No pude guardar el script (payload vacío o error de escritura).";

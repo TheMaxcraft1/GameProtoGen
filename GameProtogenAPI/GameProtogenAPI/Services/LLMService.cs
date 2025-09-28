@@ -510,20 +510,23 @@ namespace GameProtogenAPI.Services
                               ecs.create() -> uint
                               ecs.destroy(id:uint)
                               ecs.first_with(comp:string) -> uint    -- "Transform","Sprite","Collider","Physics2D","PlayerController"
-                              -- GET
-                              ecs.get(id, "Transform") => { position={x,y}, scale={x,y}, rotation=deg }
-                              ecs.get(id, "Sprite")    => { size={x,y}, color={r,g,b,a} }
-                              ecs.get(id, "Collider")  => { halfExtents={x,y}, offset={x,y} }
-                              ecs.get(id, "Physics2D") => { velocity={x,y}, gravity:number, gravityEnabled:boolean, onGround:boolean }
+                              -- GET always returns named tables (NOT arrays):
+                              ecs.get(id, "Transform") => { position={ x:number, y:number }, scale={ x:number, y:number }, rotation:number }
+                              ecs.get(id, "Sprite")    => { size={ x:number, y:number }, color={ r:int, g:int, b:int, a:int } }
+                              ecs.get(id, "Collider")  => { halfExtents={ x:number, y:number }, offset={ x:number, y:number } }
+                              ecs.get(id, "Physics2D") => { velocity={ x:number, y:number }, gravity:number, gravityEnabled:boolean, onGround:boolean }
                               ecs.get(id, "PlayerController") => { moveSpeed:number, jumpSpeed:number }
-                              -- SET (partial)
-                              ecs.set(id, "Transform", { position={x,y}?, scale={x,y}?, rotation=deg? })
-                              ecs.set(id, "Sprite",    { size={x,y}?, color={r,g,b,a}? })
-                              ecs.set(id, "Collider",  { halfExtents={x,y}?, offset={x,y}? })
-                              ecs.set(id, "Physics2D", { velocity={x,y}?, gravity:number?, gravityEnabled:boolean?, onGround:boolean? })
+
+                              -- SET also expects named tables (NOT arrays):
+                              ecs.set(id, "Transform", { position={ x:number, y:number }?, scale={ x:number, y:number }?, rotation:number? })
+                              ecs.set(id, "Sprite",    { size={ x:number, y:number }?, color={ r:int, g:int, b:int, a:int }? })
+                              ecs.set(id, "Collider",  { halfExtents={ x:number, y:number }?, offset={ x:number, y:number }? })
+                              ecs.set(id, "Physics2D", { velocity={ x:number, y:number }?, gravity:number?, gravityEnabled:boolean?, onGround:boolean? })
                               ecs.set(id, "PlayerController", { moveSpeed:number?, jumpSpeed:number? })
 
                             Rules:
+                              - When reading positions/sizes, ALWAYS use named fields: p.x, p.y (never p[1], p[2]).
+                              - When writing positions/sizes, ALWAYS send named fields: { x=..., y=... }.
                               - Always define at least one of: on_spawn, on_update.
                               - No require/io/os/debug/loadstring.
                               - Use multiples of 32 for platform placement.

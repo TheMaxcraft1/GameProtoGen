@@ -122,6 +122,20 @@ namespace GameProtogenAPI.Controllers
                 if (root.TryGetProperty("kind", out kindElem) && kindElem.GetString() == "asset")
                     return Content(result, "application/json");
 
+                if (root.TryGetProperty("kind", out kindElem) && kindElem.GetString() == "script")
+                {
+                    // Validación opcional (suave): exigir fileName y code como string
+                    if (!root.TryGetProperty("fileName", out var fn) || fn.ValueKind != JsonValueKind.String ||
+                        !root.TryGetProperty("code", out var code)   || code.ValueKind != JsonValueKind.String)
+                    {
+                        var safe = JsonSerializer.Serialize(new { kind = "text", message = "Script inválido: falta 'fileName' o 'code'." });
+                        return Content(safe, "application/json");
+                    }
+
+                    // Pasa tal cual al cliente (el cliente se encarga de guardar y asignar)
+                    return Content(result, "application/json");
+                }
+
                 // 5) Si viene JSON con 'ops' pero sin 'kind', lo envolvemos y validamos
                 if (root.TryGetProperty("ops", out _))
                 {
