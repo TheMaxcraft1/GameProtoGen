@@ -2,6 +2,10 @@
 #include "Runtime/SceneContext.h"
 #include "ECS/Components.h"
 #include "Editor/EditorFonts.h"
+#include "Systems/Renderer2D.h"
+#include <imgui_stdlib.h>
+#include <imgui-SFML.h>
+#include <cfloat>
 
 #include <imgui.h>
 #include <cstdint>
@@ -11,6 +15,97 @@ static inline void ClampDockedMinWidth(float minW) {
     // En dock, los constraints no se respetan: forzamos tamaño si se pasa.
     if (ImGui::GetWindowWidth() < minW) {
         ImGui::SetWindowSize(ImVec2(minW, ImGui::GetWindowHeight()));
+    }
+}
+
+static void DrawTexture2DEditor(Scene& scene, Entity e) {
+    if (!e) return;
+
+    // ¿La entidad tiene componente Texture2D?
+    bool hasTex = scene.textures.contains(e.id);
+    if (ImGui::CollapsingHeader("Texture2D", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::BeginDisabled(false);
+
+        if (!hasTex) {
+            if (ImGui::Button("Agregar componente Texture2D")) {
+                scene.textures[e.id] = Texture2D{}; // path vacío por ahora
+            }
+            ImGui::EndDisabled();
+            return;
+        }
+
+        // Campo path (editable)
+        auto& tex = scene.textures[e.id];
+        std::string originalPath = tex.path;
+
+        ImGui::InputText("Path", &tex.path);
+
+        ImGui::SameLine();
+        if (ImGui::Button("Quitar")) {
+            // Borra el componente de textura y deja que el renderer dibuje el rectángulo de Sprite
+            scene.textures.erase(e.id);
+            ImGui::EndDisabled();
+            return;
+        }
+
+        // Botones de utilidad
+        if (ImGui::Button("Recargar")) {
+            // Invalidar sólo esta textura para forzar reload
+            Renderer2D::InvalidateTexture(tex.path);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Limpiar caché")) {
+            Renderer2D::ClearTextureCache();
+        }
+
+        // Hint: dónde poner los assets
+        ImGui::TextUnformatted("Sugerido: colocar archivos bajo Assets/ ...");
+
+        // Preview (si hay path)
+        if (!tex.path.empty()) {
+            auto sp = Renderer2D::GetTextureCached(tex.path);
+            if (sp && sp->getSize().x > 0 && sp->getSize().y > 0) {
+                const auto sz = sp->getSize();
+                const float texW = static_cast<float>(sz.x);
+                const float texH = static_cast<float>(sz.y);
+
+                // área disponible en el Inspector
+                const float availW = std::max(32.0f, ImGui::GetContentRegionAvail().x);
+                const float maxH = 220.0f; // altura máx. del preview (ajustá a gusto)
+
+                // Fit proporcional (contain)
+                const float scale = std::min(availW / texW, maxH / texH);
+                const ImVec2 drawSz{ texW * scale, texH * scale };
+
+                ImGui::Separator();
+                ImGui::Text("Preview (%u x %u)", sz.x, sz.y);
+
+                // Marco con altura fija para centrar la imagen
+#if IMGUI_VERSION_NUM >= 19000
+                ImGui::BeginChild("##texprev", ImVec2(0, maxH), ImGuiChildFlags_Border, ImGuiWindowFlags_NoScrollbar);
+#else
+                ImGui::BeginChild("##texprev", ImVec2(0, maxH), true, ImGuiWindowFlags_NoScrollbar);
+#endif
+                // centrar dentro del child
+                const float padX = std::max(0.0f, (ImGui::GetContentRegionAvail().x + ImGui::GetStyle().WindowPadding.x * 2 - drawSz.x) * 0.5f);
+                const float padY = std::max(0.0f, (maxH - drawSz.y) * 0.5f);
+                ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + padX, ImGui::GetCursorPosY() + padY));
+
+                // ImGui-SFML: usá la overload que recibe sf::Texture y sf::Vector2f
+                ImGui::Image(*sp, sf::Vector2f(drawSz.x, drawSz.y));
+                ImGui::EndChild();
+            }
+            else {
+                ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "No se pudo cargar la textura.");
+            }
+        }
+
+        // Si cambió el path, invalidamos la textura anterior para que se recargue
+        if (tex.path != originalPath && !originalPath.empty()) {
+            Renderer2D::InvalidateTexture(originalPath);
+        }
+
+        ImGui::EndDisabled();
     }
 }
 
@@ -190,6 +285,10 @@ void InspectorPanel::OnGuiRender() {
                     (std::uint8_t)(clamp01(col[3]) * 255.f)
                 );
             }
+        }
+
+        if (ctx.scene && ctx.selected) {
+            DrawTexture2DEditor(*ctx.scene, ctx.selected);
         }
 
         // -------------------------

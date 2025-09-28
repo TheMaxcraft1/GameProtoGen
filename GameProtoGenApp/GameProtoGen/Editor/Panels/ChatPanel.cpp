@@ -16,6 +16,7 @@
 #include <vector>
 #include <filesystem>
 #include "ViewportPanel.h"
+#include "Systems/Renderer2D.h"
 
 using json = nlohmann::json;
 
@@ -679,9 +680,21 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
                 if (created.count(id) == 0) modified.insert(id);
             }
             else if (id && comp == "Texture2D" && op.contains("value") && op["value"].is_object()) {
+                auto& scene = *ctx.scene;
                 const auto& value = op["value"];
                 if (value.contains("path") && value["path"].is_string()) {
-                    ctx.scene->textures[id] = Texture2D{ value["path"].get<std::string>() };
+                    std::string newPath = value["path"].get<std::string>();
+
+                    // crea o muta el componente
+                    auto& tex = scene.textures[id];
+                    std::string oldPath = tex.path;
+                    tex.path = newPath;
+
+                    // invalidar caché para forzar recarga (old y new)
+                    if (!oldPath.empty() && oldPath != newPath)
+                        Renderer2D::InvalidateTexture(oldPath);
+                    Renderer2D::InvalidateTexture(newPath);
+
                     if (created.count(id) == 0) modified.insert(id);
                 }
             }

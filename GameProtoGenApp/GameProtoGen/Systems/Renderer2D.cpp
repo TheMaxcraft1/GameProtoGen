@@ -65,3 +65,13 @@ void Renderer2D::Draw(const Scene& scene, sf::RenderTarget& target) {
         }
     }
 }
+
+std::shared_ptr<sf::Texture> Renderer2D::GetTextureCached(const std::string& path) {
+    return GetTexture(path);
+}
+
+void Renderer2D::InvalidateTexture(const std::string& path) {
+    if (path.empty()) return;
+    if (auto it = s_TexCache.find(path); it != s_TexCache.end())
+        s_TexCache.erase(it);
+}
