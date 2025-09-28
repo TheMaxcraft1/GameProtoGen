@@ -56,6 +56,15 @@ FetchContent_Declare(json
 )
 FetchContent_MakeAvailable(json)
 
+# ---------- tinyfiledialogs (file picker nativo) ----------
+FetchContent_Declare(tinyfiledialogs
+  GIT_REPOSITORY https://github.com/native-toolkit/tinyfiledialogs.git
+  GIT_TAG master
+)
+FetchContent_MakeAvailable(tinyfiledialogs)
+add_library(tinyfiledialogs_lib ${tinyfiledialogs_SOURCE_DIR}/tinyfiledialogs.c)
+target_include_directories(tinyfiledialogs_lib PUBLIC ${tinyfiledialogs_SOURCE_DIR})
+
 # ---------- cpr (async HTTP over libcurl) ----------
 set(CPR_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 # Si no tenés libcurl del sistema, esto compila uno embebido (más lento la primera vez).
@@ -135,6 +144,7 @@ target_link_libraries(GameProtoGen PRIVATE
   nlohmann_json::nlohmann_json
   cpr::cpr
   lua_static
+  tinyfiledialogs_lib 
 )
 
 # Copia toda la carpeta Assets al directorio donde queda la .exe (Debug/Release)
@@ -143,6 +153,10 @@ add_custom_command(TARGET GameProtoGen POST_BUILD
             ${CMAKE_SOURCE_DIR}/Assets
             $<TARGET_FILE_DIR:GameProtoGen>/Assets
 )
+
+if (WIN32)
+  target_link_libraries(GameProtoGen PRIVATE comdlg32)
+endif()
 
 if (MSVC)
   add_compile_options("/utf-8")

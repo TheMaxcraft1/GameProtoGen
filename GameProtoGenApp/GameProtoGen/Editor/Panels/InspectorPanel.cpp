@@ -10,6 +10,8 @@
 #include <imgui.h>
 #include <cstdint>
 #include <algorithm>
+#include "tinyfiledialogs.h"
+#include <filesystem>
 
 static inline void ClampDockedMinWidth(float minW) {
     // En dock, los constraints no se respetan: forzamos tamaño si se pasa.
@@ -21,36 +23,94 @@ static inline void ClampDockedMinWidth(float minW) {
 static void DrawTexture2DEditor(Scene& scene, Entity e) {
     if (!e) return;
 
-    // ¿La entidad tiene componente Texture2D?
+    // Config rápido: elegí cómo mostrar la ruta
+    constexpr float kInputRatio = 0.70f; // % del ancho para el campo (el resto queda para el botón)
+
     bool hasTex = scene.textures.contains(e.id);
     if (ImGui::CollapsingHeader("Texture2D", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::BeginDisabled(false);
 
         if (!hasTex) {
             if (ImGui::Button("Agregar componente Texture2D")) {
-                scene.textures[e.id] = Texture2D{}; // path vacío por ahora
+                scene.textures[e.id] = Texture2D{}; // path vacío
             }
             ImGui::EndDisabled();
             return;
         }
 
-        // Campo path (editable)
         auto& tex = scene.textures[e.id];
         std::string originalPath = tex.path;
 
-        ImGui::InputText("Path", &tex.path);
+        {
+            const float totalW = ImGui::GetContentRegionAvail().x;
+            const float btnW = ImGui::GetFrameHeight();  // cuadrado
+            const float inputW = std::max(120.0f, totalW * kInputRatio - 1.0f); // un poco más chico
+            const float spacer = 0.0f; // sin espacio para que quede pegado
 
-        ImGui::SameLine();
-        if (ImGui::Button("Quitar")) {
-            // Borra el componente de textura y deja que el renderer dibuje el rectángulo de Sprite
-            scene.textures.erase(e.id);
-            ImGui::EndDisabled();
-            return;
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(spacer, ImGui::GetStyle().ItemSpacing.y));
+
+            ImGui::SetNextItemWidth(inputW);
+            ImGuiInputTextFlags flags = ImGuiInputTextFlags_ReadOnly;
+            ImGui::InputTextWithHint("##path", "Assets/...", &tex.path, flags);
+
+            ImGui::SameLine(0.0f, spacer);
+            bool pick = ImGui::Button("...", ImVec2(btnW, 0));
+            ImGui::PopStyleVar();
+
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Elegir archivo");
+
+            if (pick) {
+                const char* filters[] = { "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.tga" };
+                const char* selected = tinyfd_openFileDialog(
+                    "Elegí una textura",
+                    "Assets",
+                    (int)(sizeof(filters) / sizeof(filters[0])),
+                    filters,
+                    "Imágenes",
+                    0 // una sola selección
+                );
+                if (selected && *selected) {
+                    try {
+                        namespace fs = std::filesystem;
+                        std::error_code ec;
+                        fs::path chosenAbs = fs::absolute(selected, ec);
+                        fs::path assetsRoot = fs::absolute("Assets", ec);
+
+                        std::string newPath = chosenAbs.generic_string();
+                        if (!ec) {
+                            fs::path rel = fs::relative(chosenAbs, assetsRoot, ec);
+
+                            bool hasTraversal = false;
+                            for (const auto& part : rel) {
+                                if (part == "..") { hasTraversal = true; break; }
+                            }
+                            if (!ec && !rel.empty() && !hasTraversal) {
+                                newPath = (fs::path("Assets") / rel).generic_string();
+                            }
+                        }
+
+                        std::string oldPath = tex.path;
+                        tex.path = newPath;
+                        if (!oldPath.empty() && oldPath != newPath)
+                            Renderer2D::InvalidateTexture(oldPath);
+                        Renderer2D::InvalidateTexture(newPath);
+                    }
+                    catch (...) {
+                        // no romper la UI si falla algo
+                    }
+                }
+            }
+
+            ImGui::SameLine();
+            if (ImGui::Button("Quitar")) {
+                scene.textures.erase(e.id);
+                ImGui::EndDisabled();
+                return;
+            }
         }
 
         // Botones de utilidad
         if (ImGui::Button("Recargar")) {
-            // Invalidar sólo esta textura para forzar reload
             Renderer2D::InvalidateTexture(tex.path);
         }
         ImGui::SameLine();
@@ -58,40 +118,32 @@ static void DrawTexture2DEditor(Scene& scene, Entity e) {
             Renderer2D::ClearTextureCache();
         }
 
-        // Hint: dónde poner los assets
-        ImGui::TextUnformatted("Sugerido: colocar archivos bajo Assets/ ...");
-
-        // Preview (si hay path)
+        // Preview
         if (!tex.path.empty()) {
             auto sp = Renderer2D::GetTextureCached(tex.path);
             if (sp && sp->getSize().x > 0 && sp->getSize().y > 0) {
                 const auto sz = sp->getSize();
-                const float texW = static_cast<float>(sz.x);
-                const float texH = static_cast<float>(sz.y);
+                const float tw = (float)sz.x;
+                const float th = (float)sz.y;
 
-                // área disponible en el Inspector
                 const float availW = std::max(32.0f, ImGui::GetContentRegionAvail().x);
-                const float maxH = 220.0f; // altura máx. del preview (ajustá a gusto)
-
-                // Fit proporcional (contain)
-                const float scale = std::min(availW / texW, maxH / texH);
-                const ImVec2 drawSz{ texW * scale, texH * scale };
+                const float maxH = 220.0f;
+                const float scale = std::min(availW / tw, maxH / th);
+                const ImVec2 drawSz{ tw * scale, th * scale };
 
                 ImGui::Separator();
                 ImGui::Text("Preview (%u x %u)", sz.x, sz.y);
 
-                // Marco con altura fija para centrar la imagen
 #if IMGUI_VERSION_NUM >= 19000
                 ImGui::BeginChild("##texprev", ImVec2(0, maxH), ImGuiChildFlags_Border, ImGuiWindowFlags_NoScrollbar);
 #else
                 ImGui::BeginChild("##texprev", ImVec2(0, maxH), true, ImGuiWindowFlags_NoScrollbar);
 #endif
-                // centrar dentro del child
-                const float padX = std::max(0.0f, (ImGui::GetContentRegionAvail().x + ImGui::GetStyle().WindowPadding.x * 2 - drawSz.x) * 0.5f);
+                const float innerW = ImGui::GetContentRegionAvail().x + ImGui::GetStyle().WindowPadding.x * 2;
+                const float padX = std::max(0.0f, (innerW - drawSz.x) * 0.5f);
                 const float padY = std::max(0.0f, (maxH - drawSz.y) * 0.5f);
                 ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + padX, ImGui::GetCursorPosY() + padY));
 
-                // ImGui-SFML: usá la overload que recibe sf::Texture y sf::Vector2f
                 ImGui::Image(*sp, sf::Vector2f(drawSz.x, drawSz.y));
                 ImGui::EndChild();
             }
@@ -100,7 +152,6 @@ static void DrawTexture2DEditor(Scene& scene, Entity e) {
             }
         }
 
-        // Si cambió el path, invalidamos la textura anterior para que se recargue
         if (tex.path != originalPath && !originalPath.empty()) {
             Renderer2D::InvalidateTexture(originalPath);
         }
