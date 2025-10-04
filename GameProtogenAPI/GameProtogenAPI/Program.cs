@@ -63,10 +63,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }));
+
 //app.UseHttpsRedirection();
 
 //app.UseAuthorization();
 
 app.MapControllers();
 
-app.Run("http://localhost:5199");
+app.Run();
