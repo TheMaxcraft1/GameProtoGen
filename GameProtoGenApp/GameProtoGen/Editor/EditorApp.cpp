@@ -75,7 +75,8 @@ public:
         PushLayer(new ImGuiLayer(win));
         PushLayer(new ViewportPanel());
         PushLayer(new InspectorPanel());
-        auto client = std::make_shared<ApiClient>("127.0.0.1", 5199);
+        auto client = std::make_shared<ApiClient>("https://ca-game-protogen.purplehill-2f1636cc.brazilsouth.azurecontainerapps.io");
+        client->SetVerifySsl(true); 
         client->SetTimeouts(10, 180, 30);
         PushLayer(new ChatPanel(client));
 
