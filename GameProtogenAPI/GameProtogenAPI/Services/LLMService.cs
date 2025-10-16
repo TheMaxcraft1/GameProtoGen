@@ -1,7 +1,7 @@
 ﻿using GameProtogenAPI.Services.Contracts;
-using Azure.AI.OpenAI;
 using OpenAI.Images;
 using System.Xml.Linq;
+using OpenAI.Chat;
 
 namespace GameProtogenAPI.Services
 {
@@ -9,9 +9,9 @@ namespace GameProtogenAPI.Services
     {
         private readonly ChatClient _mini;
         private readonly ILogger<LLMService> _logger;
-        private readonly ImageClient _images;
+        private readonly IImageService _images;
 
-        public LLMService(ChatClient mini, ILogger<LLMService> logger, ImageClient images)
+        public LLMService(ChatClient mini, ILogger<LLMService> logger, IImageService images)
         {
             _mini = mini;
             _logger = logger;
@@ -449,24 +449,11 @@ namespace GameProtogenAPI.Services
                 ? prompt
                 : $"{rules}\n\nPEDIDO DEL USUARIO:\n{prompt}";
 
-#pragma warning disable OPENAI001
-            var options = new ImageGenerationOptions
-            {
-                Size = GeneratedImageSize.W1024xH1024,
-                Quality = GeneratedImageQuality.Medium,                
-            };
-
-            if (string.Equals(assetMode, "sprite", StringComparison.OrdinalIgnoreCase))
-            {
-                // SPRITE => fondo transparente
-                options.Background = GeneratedImageBackground.Transparent;
-            }
-#pragma warning restore OPENAI001
-
             GeneratedImage img;
             try
             {
-                var gen = await _images.GenerateImageAsync(modelPrompt, options, ct);
+                var gen = await _images.GenerateImage(modelPrompt, 
+                    transparent: string.Equals(assetMode, "sprite", StringComparison.OrdinalIgnoreCase), ct);
                 img = gen.Value;
             }
             catch (Exception ex)

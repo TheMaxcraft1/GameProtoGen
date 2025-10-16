@@ -1,4 +1,5 @@
 using Azure;
+using Azure.AI.Inference;
 using Azure.AI.OpenAI;
 using GameProtogenAPI.AI.AgentPlugins;
 using GameProtogenAPI.AI.Orchestration;
@@ -22,19 +23,19 @@ var openAIPlatformApiKey =
     builder.Configuration["OPENAI_API_KEY"] ??
     Environment.GetEnvironmentVariable("OPENAI_API_KEY");
 
-var azureAIEndpoint =
-    builder.Configuration["AzureAI:Endpoint"] ??
-    builder.Configuration["AZURE_OPENAI_ENDPOINT"] ??
-    Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT");
+var azureAIInferenceEndpoint =
+    builder.Configuration["AzureAI:InferenceEndpoint"] ??
+    builder.Configuration["AZURE_INFERENCE_ENDPOINT"] ??
+    Environment.GetEnvironmentVariable("AZURE_INFERENCE_ENDPOINT");
 
-var azureAIApiKey =
-    builder.Configuration["AzureAI:ApiKey"] ??
-    builder.Configuration["AZURE_OPENAI_API_KEY"] ??
-    Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY");
+var azureAIInferenceApiKey =
+    builder.Configuration["AzureAI:InferenceApiKey"] ??
+    builder.Configuration["AZURE_INFERENCE_API_KEY"] ??
+    Environment.GetEnvironmentVariable("AZURE_INFERENCE_API_KEY");
 
-if (string.IsNullOrWhiteSpace(azureAIEndpoint))
+if (string.IsNullOrWhiteSpace(azureAIInferenceEndpoint))
     throw new InvalidOperationException("Falta AzureAI Endpoint (AzureAI:Endpoint o AZURE_OPENAI_ENDPOINT).");
-if (string.IsNullOrWhiteSpace(azureAIApiKey))
+if (string.IsNullOrWhiteSpace(azureAIInferenceApiKey))
     throw new InvalidOperationException("Falta AzureAI ApiKey (AzureAI:ApiKey o AZURE_OPENAI_API_KEY).");
 if (string.IsNullOrWhiteSpace(openAIPlatformApiKey))
     throw new InvalidOperationException("Falta OpenAI ApiKey (OpenAI:ApiKey o OPENAI_API_KEY).");
@@ -42,7 +43,7 @@ if (string.IsNullOrWhiteSpace(openAIPlatformApiKey))
 builder.Services.AddSingleton<ImageClient>(_ =>
     new ImageClient("gpt-image-1", openAIPlatformApiKey));
 
-builder.Services.AddSingleton(new AzureOpenAIClient(new Uri(azureAIEndpoint), new AzureKeyCredential(azureAIApiKey)));
+builder.Services.AddSingleton(new ChatCompletionsClient(new Uri(azureAIInferenceEndpoint), new AzureKeyCredential(azureAIInferenceApiKey)));
 
 builder.Services.AddSingleton(sp =>
 {
@@ -54,7 +55,7 @@ builder.Services.AddSingleton(sp =>
 {
     // Podés parametrizar el modelo desde config si querés
     var kernel = Kernel.CreateBuilder()
-        .AddAzureOpenAIChatCompletion("grok-4-fast-reasoning", endpoint: azureAIEndpoint, azureAIApiKey)
+        .AddAzureOpenAIChatCompletion("grok-4-fast-reasoning", endpoint: azureAIInferenceEndpoint, azureAIInferenceApiKey)
         .Build();
 
     // 2) Agregar plugins (Planner y Synthesizer)
@@ -70,6 +71,8 @@ builder.Services.AddSingleton(sp =>
 
 // 3) Orquestador SK
 builder.Services.AddSingleton<ISkSceneEditOrchestrator, SkSceneEditOrchestrator>();
+
+builder.Services.AddScoped<IImageService, OpenAIImageGenService>();
 
 // 4) Tu servicio de LLM (se usa adentro de los plugins)
 var useMock = builder.Configuration.GetValue("LLM:USE_MOCK", false);
