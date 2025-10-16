@@ -1,3 +1,5 @@
+using Azure;
+using Azure.AI.OpenAI;
 using GameProtogenAPI.AI.AgentPlugins;
 using GameProtogenAPI.AI.Orchestration;
 using GameProtogenAPI.AI.Orchestration.Contracts;
@@ -15,20 +17,44 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-var apiKey = builder.Configuration["OpenAI:ApiKey"] ??
-        builder.Configuration["OPENAI_API_KEY"] ??         // fallback
-        Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-if (string.IsNullOrWhiteSpace(apiKey))
-    throw new InvalidOperationException("Falta OPENAI_API_KEY");
+var openAIPlatformApiKey =
+    builder.Configuration["OpenAI:ApiKey"] ??
+    builder.Configuration["OPENAI_API_KEY"] ??
+    Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+
+var azureAIEndpoint =
+    builder.Configuration["AzureAI:Endpoint"] ??
+    builder.Configuration["AZURE_OPENAI_ENDPOINT"] ??
+    Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT");
+
+var azureAIApiKey =
+    builder.Configuration["AzureAI:ApiKey"] ??
+    builder.Configuration["AZURE_OPENAI_API_KEY"] ??
+    Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY");
+
+if (string.IsNullOrWhiteSpace(azureAIEndpoint))
+    throw new InvalidOperationException("Falta AzureAI Endpoint (AzureAI:Endpoint o AZURE_OPENAI_ENDPOINT).");
+if (string.IsNullOrWhiteSpace(azureAIApiKey))
+    throw new InvalidOperationException("Falta AzureAI ApiKey (AzureAI:ApiKey o AZURE_OPENAI_API_KEY).");
+if (string.IsNullOrWhiteSpace(openAIPlatformApiKey))
+    throw new InvalidOperationException("Falta OpenAI ApiKey (OpenAI:ApiKey o OPENAI_API_KEY).");
 
 builder.Services.AddSingleton<ImageClient>(_ =>
-    new ImageClient("gpt-image-1", apiKey));
+    new ImageClient("gpt-image-1", openAIPlatformApiKey));
+
+builder.Services.AddSingleton(new AzureOpenAIClient(new Uri(azureAIEndpoint), new AzureKeyCredential(azureAIApiKey)));
+
+builder.Services.AddSingleton(sp =>
+{
+    var root = sp.GetRequiredService<AzureOpenAIClient>();
+    return root.GetChatClient("grok-4-fast-reasoning");
+});
 
 builder.Services.AddSingleton(sp =>
 {
     // Podés parametrizar el modelo desde config si querés
     var kernel = Kernel.CreateBuilder()
-        .AddOpenAIChatCompletion("gpt-5-mini", apiKey)   // router/LLM base
+        .AddAzureOpenAIChatCompletion("grok-4-fast-reasoning", endpoint: azureAIEndpoint, azureAIApiKey)
         .Build();
 
     // 2) Agregar plugins (Planner y Synthesizer)
@@ -41,8 +67,6 @@ builder.Services.AddSingleton(sp =>
 
     return kernel;
 });
-
-builder.Services.AddSingleton<ChatClient>(_ => new ChatClient("gpt-5-mini", apiKey));
 
 // 3) Orquestador SK
 builder.Services.AddSingleton<ISkSceneEditOrchestrator, SkSceneEditOrchestrator>();

@@ -1,5 +1,5 @@
 ﻿using GameProtogenAPI.Services.Contracts;
-using OpenAI.Chat;
+using Azure.AI.OpenAI;
 using OpenAI.Images;
 using System.Xml.Linq;
 
@@ -67,7 +67,7 @@ namespace GameProtogenAPI.Services
                   "uniqueItems": true,
                   "items": {
                     "type": "string",
-                    "enum": ["scene_edit","design_qa","asset_gen"]
+                    "enum": ["scene_edit","design_qa","asset_gen", "script_gen"]
                   }
                 },
                 "reason": { "type": "string" },
