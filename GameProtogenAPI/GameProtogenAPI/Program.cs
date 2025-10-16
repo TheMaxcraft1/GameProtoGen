@@ -1,14 +1,11 @@
 using Azure;
 using Azure.AI.Inference;
-using Azure.AI.OpenAI;
 using GameProtogenAPI.AI.AgentPlugins;
 using GameProtogenAPI.AI.Orchestration;
 using GameProtogenAPI.AI.Orchestration.Contracts;
 using GameProtogenAPI.Services;
 using GameProtogenAPI.Services.Contracts;
-using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.SemanticKernel;
-using OpenAI.Chat;
 using OpenAI.Images;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -47,15 +44,9 @@ builder.Services.AddSingleton(new ChatCompletionsClient(new Uri(azureAIInference
 
 builder.Services.AddSingleton(sp =>
 {
-    var root = sp.GetRequiredService<AzureOpenAIClient>();
-    return root.GetChatClient("grok-4-fast-reasoning");
-});
-
-builder.Services.AddSingleton(sp =>
-{
     // Podés parametrizar el modelo desde config si querés
     var kernel = Kernel.CreateBuilder()
-        .AddAzureOpenAIChatCompletion("grok-4-fast-reasoning", endpoint: azureAIInferenceEndpoint, azureAIInferenceApiKey)
+        .AddAzureAIInferenceChatCompletion("grok-4-fast-reasoning", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
         .Build();
 
     // 2) Agregar plugins (Planner y Synthesizer)

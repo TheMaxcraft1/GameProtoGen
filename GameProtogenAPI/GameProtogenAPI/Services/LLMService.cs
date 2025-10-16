@@ -1,21 +1,35 @@
 ﻿using GameProtogenAPI.Services.Contracts;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
+using OpenAI.Chat;
 using OpenAI.Images;
 using System.Xml.Linq;
-using OpenAI.Chat;
 
 namespace GameProtogenAPI.Services
 {
     public class LLMService : ILLMService
     {
-        private readonly ChatClient _mini;
+        private readonly Kernel _kernel;
         private readonly ILogger<LLMService> _logger;
         private readonly IImageService _images;
 
-        public LLMService(ChatClient mini, ILogger<LLMService> logger, IImageService images)
+        public LLMService(Kernel kernel, ILogger<LLMService> logger, IImageService images)
         {
-            _mini = mini;
+            _kernel = kernel;
             _logger = logger;
             _images = images;
+        }
+
+        private async Task<string> CompleteAsync(string system, string user, CancellationToken ct, double temperature = 0.2)
+        {
+            var chat = _kernel.GetRequiredService<IChatCompletionService>();
+
+            var history = new ChatHistory();
+            history.AddSystemMessage(system);
+            history.AddUserMessage(user);
+
+            var result = await chat.GetChatMessageContentAsync(history);
+            return result?.Content ?? string.Empty;
         }
 
         public async Task<string> RouteAsync(string userPrompt, string sceneJson, CancellationToken ct = default)
@@ -38,6 +52,16 @@ namespace GameProtogenAPI.Services
                 Language: same as user.
 
                 Routing rules (IMPORTANT):
+                - Return ONLY a JSON object wrapped between the exact markers:
+                    <<<BEGIN_JSON
+                    { ... }
+                    END_JSON>>>
+                - JSON shape:
+                    {
+                      "agents": ["scene_edit"|"design_qa"|"asset_gen"|"script_gen", ...], // 1..3 unique, execution order
+                      "reason": "short string (<=200 chars)",
+                      "asset_mode": "texture"|"sprite"   // OPTIONAL, REQUIRED if "asset_gen" present
+                    }
                 - If the user asks to generate an image/texture/sprite/tile:
                     * include "asset_gen"
                     * set "asset_mode" to "texture" when they want a MATERIAL / TILE / BACKGROUND that fills the canvas.
@@ -55,51 +79,48 @@ namespace GameProtogenAPI.Services
                 - If the user asks for scene edits without asset generation, return ONLY ["scene_edit"].
                 """";
 
-            var schema = """
-            {
-              "type": "object",
-              "required": ["agents","reason"],
-              "properties": {
-                "agents": {
-                  "type": "array",
-                  "minItems": 1,
-                  "maxItems": 3,
-                  "uniqueItems": true,
-                  "items": {
-                    "type": "string",
-                    "enum": ["scene_edit","design_qa","asset_gen", "script_gen"]
-                  }
-                },
-                "reason": { "type": "string" },
-                "asset_mode": {
-                  "type": "string",
-                  "enum": ["texture","sprite"]
-                }
-              },
-              "additionalProperties": false
-            }
-            """;
+            //var schema = """
+            //{
+            //  "type": "object",
+            //  "required": ["agents","reason"],
+            //  "properties": {
+            //    "agents": {
+            //      "type": "array",
+            //      "minItems": 1,
+            //      "maxItems": 3,
+            //      "uniqueItems": true,
+            //      "items": {
+            //        "type": "string",
+            //        "enum": ["scene_edit","design_qa","asset_gen", "script_gen"]
+            //      }
+            //    },
+            //    "reason": { "type": "string" },
+            //    "asset_mode": {
+            //      "type": "string",
+            //      "enum": ["texture","sprite"]
+            //    }
+            //  },
+            //  "additionalProperties": false
+            //}
+            //""";
 
-#pragma warning disable OPENAI001
-            var options = new ChatCompletionOptions
-            {
-                ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
-                    jsonSchemaFormatName: "ops_schema",
-                    jsonSchema: BinaryData.FromString(schema),
-                    jsonSchemaIsStrict: false
-                ),
-                ReasoningEffortLevel = ChatReasoningEffortLevel.Low
-            };
-#pragma warning restore OPENAI001
+//#pragma warning disable OPENAI001
+//            var options = new ChatCompletionOptions
+//            {
+//                ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
+//                    jsonSchemaFormatName: "ops_schema",
+//                    jsonSchema: BinaryData.FromString(schema),
+//                    jsonSchemaIsStrict: false
+//                ),
+//                ReasoningEffortLevel = ChatReasoningEffortLevel.Low
+//            };
+//#pragma warning restore OPENAI001
 
             var user = $"Prompt:\n{userPrompt}\n\n(For context, here is the current scene JSON):\n{sceneJson}";
-            var completion = await _mini.CompleteChatAsync(
-                [new SystemChatMessage(system), new UserChatMessage(user)],
-                options, ct);
-
-            var json = completion.Value.Content?[0].Text ?? "{}";
-            _logger.LogInformation("ROUTER response: {Json}", json);
-            return json;
+            var completion = await CompleteAsync(system, user, ct);
+            //var json = completion.Value.Content?[0].Text ?? "{}";
+            _logger.LogInformation("ROUTER response: {Json}", completion);
+            return completion;
         }
 
         public async Task<string> BuildEditPlanXmlAsync(string userPrompt, string sceneJson, CancellationToken ct = default)
@@ -156,29 +177,21 @@ namespace GameProtogenAPI.Services
                 </task>
                 """;
 
-#pragma warning disable OPENAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-            var options = new ChatCompletionOptions
-            {
-                ReasoningEffortLevel = ChatReasoningEffortLevel.Low
-            };
-#pragma warning restore OPENAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+//#pragma warning disable OPENAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+//            var options = new ChatCompletionOptions
+//            {
+//                ReasoningEffortLevel = ChatReasoningEffortLevel.Low
+//            };
+//#pragma warning restore OPENAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 
 
-            var completionResult = await _mini.CompleteChatAsync(
-                new List<ChatMessage>
-                {
-                    new SystemChatMessage(system),
-                    new UserChatMessage(user)
-                },
-                options
-            );
 
             // 👇 FIX 1: con la sobrecarga async+ct, accedemos a .Value
-            var completion = completionResult.Value;
-            var text = completion.Content[0].Text?.Trim() ?? "";
-            _logger.LogInformation("PLAN response: {Text}", text);
+            var completion = await CompleteAsync(system, user, ct);
+            //var text = completion.Content[0].Text?.Trim() ?? "";
+            _logger.LogInformation("PLAN response: {Text}", completion);
 
-            var plan = ExtractPlanXml(text);
+            var plan = ExtractPlanXml(completion);
             if (string.IsNullOrWhiteSpace(plan))
                 throw new InvalidOperationException("El modelo no devolvió un <plan> XML válido.");
 
@@ -194,6 +207,9 @@ namespace GameProtogenAPI.Services
             var system = """
                 Convierte el PLAN en una lista de operaciones JSON para un motor 2D.
                 Responde SOLO un objeto JSON con raíz "ops" (sin texto adicional).
+                <<<BEGIN_JSON
+                    { "ops": [ ... ] }
+                END_JSON>>>
 
                 Operaciones soportadas (usa exactamente estos campos):
                   - spawn_box:
@@ -237,123 +253,115 @@ namespace GameProtogenAPI.Services
 
 
             // JSON Schema que incluye set_component (acepta entity o entities)
-            var schema = """
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "ops": {
-                  "type": "array",
-                  "minItems": 0,
-                  "items": {
-                    "oneOf": [
-                      { "$ref": "#/$defs/spawn_box" },
-                      { "$ref": "#/$defs/set_transform" },
-                      { "$ref": "#/$defs/remove_entity" },
-                      { "$ref": "#/$defs/set_component" }
-                    ]
-                  }
-                }
-              },
-              "required": ["ops"],
-              "$defs": {
-                "vec2": {
-                  "type": "array",
-                  "items": { "type": "number" },
-                  "minItems": 2,
-                  "maxItems": 2
-                },
-                "colorObj": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "r": { "type": "integer", "minimum": 0, "maximum": 255 },
-                    "g": { "type": "integer", "minimum": 0, "maximum": 255 },
-                    "b": { "type": "integer", "minimum": 0, "maximum": 255 },
-                    "a": { "type": "integer", "minimum": 0, "maximum": 255 }
-                  },
-                  "required": ["r","g","b"]
-                },
-                "spawn_box": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "op": { "type": "string", "enum": ["spawn_box"] },
-                    "pos": { "$ref": "#/$defs/vec2" },
-                    "size": { "$ref": "#/$defs/vec2" },
-                    "colorHex": { "type": "string", "pattern": "^#([A-Fa-f0-9]{8}|[A-Fa-f0-9]{6})$" }
-                  },
-                  "required": ["op","pos","size"]
-                },
-                "set_transform": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "op": { "type": "string", "enum": ["set_transform"] },
-                    "entity": { "type": "integer", "minimum": 1 },
-                    "position": { "$ref": "#/$defs/vec2" },
-                    "scale": { "$ref": "#/$defs/vec2" },
-                    "rotation": { "type": "number" }
-                  },
-                  "required": ["op","entity"]
-                },
-                "remove_entity": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "op": { "type": "string", "enum": ["remove_entity"] },
-                    "entity": { "type": "integer", "minimum": 1 }
-                  },
-                  "required": ["op","entity"]
-                },
-                "set_component": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "op": { "type": "string", "enum": ["set_component"] },
-                    "component": { "type": "string", "enum": ["Sprite","Texture2D"] },
-                    "entity": { "type": "integer", "minimum": 1 },
-                    "value": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "properties": {
-                        "colorHex": { "type": "string", "pattern": "^#([A-Fa-f0-9]{8}|[A-Fa-f0-9]{6})$" },
-                        "color": { "$ref": "#/$defs/colorObj" },
-                        "size": { "$ref": "#/$defs/vec2" },
-                        "path": { "type": "string" }
-                      }
-                    }
-                  },
-                  "required": ["op","component","entity","value"]
-                }
-              }
-            }
-            """;
+//            var schema = """
+//            {
+//              "type": "object",
+//              "additionalProperties": false,
+//              "properties": {
+//                "ops": {
+//                  "type": "array",
+//                  "minItems": 0,
+//                  "items": {
+//                    "oneOf": [
+//                      { "$ref": "#/$defs/spawn_box" },
+//                      { "$ref": "#/$defs/set_transform" },
+//                      { "$ref": "#/$defs/remove_entity" },
+//                      { "$ref": "#/$defs/set_component" }
+//                    ]
+//                  }
+//                }
+//              },
+//              "required": ["ops"],
+//              "$defs": {
+//                "vec2": {
+//                  "type": "array",
+//                  "items": { "type": "number" },
+//                  "minItems": 2,
+//                  "maxItems": 2
+//                },
+//                "colorObj": {
+//                  "type": "object",
+//                  "additionalProperties": false,
+//                  "properties": {
+//                    "r": { "type": "integer", "minimum": 0, "maximum": 255 },
+//                    "g": { "type": "integer", "minimum": 0, "maximum": 255 },
+//                    "b": { "type": "integer", "minimum": 0, "maximum": 255 },
+//                    "a": { "type": "integer", "minimum": 0, "maximum": 255 }
+//                  },
+//                  "required": ["r","g","b"]
+//                },
+//                "spawn_box": {
+//                  "type": "object",
+//                  "additionalProperties": false,
+//                  "properties": {
+//                    "op": { "type": "string", "enum": ["spawn_box"] },
+//                    "pos": { "$ref": "#/$defs/vec2" },
+//                    "size": { "$ref": "#/$defs/vec2" },
+//                    "colorHex": { "type": "string", "pattern": "^#([A-Fa-f0-9]{8}|[A-Fa-f0-9]{6})$" }
+//                  },
+//                  "required": ["op","pos","size"]
+//                },
+//                "set_transform": {
+//                  "type": "object",
+//                  "additionalProperties": false,
+//                  "properties": {
+//                    "op": { "type": "string", "enum": ["set_transform"] },
+//                    "entity": { "type": "integer", "minimum": 1 },
+//                    "position": { "$ref": "#/$defs/vec2" },
+//                    "scale": { "$ref": "#/$defs/vec2" },
+//                    "rotation": { "type": "number" }
+//                  },
+//                  "required": ["op","entity"]
+//                },
+//                "remove_entity": {
+//                  "type": "object",
+//                  "additionalProperties": false,
+//                  "properties": {
+//                    "op": { "type": "string", "enum": ["remove_entity"] },
+//                    "entity": { "type": "integer", "minimum": 1 }
+//                  },
+//                  "required": ["op","entity"]
+//                },
+//                "set_component": {
+//                  "type": "object",
+//                  "additionalProperties": false,
+//                  "properties": {
+//                    "op": { "type": "string", "enum": ["set_component"] },
+//                    "component": { "type": "string", "enum": ["Sprite","Texture2D"] },
+//                    "entity": { "type": "integer", "minimum": 1 },
+//                    "value": {
+//                      "type": "object",
+//                      "additionalProperties": false,
+//                      "properties": {
+//                        "colorHex": { "type": "string", "pattern": "^#([A-Fa-f0-9]{8}|[A-Fa-f0-9]{6})$" },
+//                        "color": { "$ref": "#/$defs/colorObj" },
+//                        "size": { "$ref": "#/$defs/vec2" },
+//                        "path": { "type": "string" }
+//                      }
+//                    }
+//                  },
+//                  "required": ["op","component","entity","value"]
+//                }
+//              }
+//            }
+//            """;
 
-#pragma warning disable OPENAI001
-            var options = new ChatCompletionOptions
-            {
-                ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
-                    jsonSchemaFormatName: "ops_schema",
-                    jsonSchema: BinaryData.FromString(schema),
-                    jsonSchemaIsStrict: false // dejar laxa: el modelo puede incluir entity o entities
-                ),
-                ReasoningEffortLevel = ChatReasoningEffortLevel.Low
-            };
-#pragma warning restore OPENAI001
+//#pragma warning disable OPENAI001
+//            var options = new ChatCompletionOptions
+//            {
+//                ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
+//                    jsonSchemaFormatName: "ops_schema",
+//                    jsonSchema: BinaryData.FromString(schema),
+//                    jsonSchemaIsStrict: false // dejar laxa: el modelo puede incluir entity o entities
+//                ),
+//                ReasoningEffortLevel = ChatReasoningEffortLevel.Low
+//            };
+//#pragma warning restore OPENAI001
 
-            var completionResult = await _mini.CompleteChatAsync(
-                new List<ChatMessage>
-                {
-            new SystemChatMessage(system),
-            new UserChatMessage(user)
-                },
-                options,
-                ct
-            );
+            var json = await CompleteAsync(system, user, ct);
 
-            var completion = completionResult.Value;
-            var json = completion.Content[0].Text?.Trim() ?? "";
+            //var completion = completionResult.Value;
+            //var json = completion.Content[0].Text?.Trim() ?? "";
             _logger.LogInformation("OPS response (raw): {Json}", json);
 
             // --- Saneo robusto ---
@@ -388,28 +396,20 @@ namespace GameProtogenAPI.Services
                   - Reference common patterns: jump arcs, coyote time, input buffering, acceleration curves, invulnerability frames.
                   - Avoid engine-specific APIs; speak conceptually with practical tips that transfer across engines.
                 Output:
-                  - Plain text only, no code unless explicitly asked.
+                  - Plain text only.
                 Language: match the user's language.
             """;
 
-#pragma warning disable OPENAI001
-            var options = new ChatCompletionOptions
-            {
-                ReasoningEffortLevel = ChatReasoningEffortLevel.Low
-            };
-#pragma warning restore OPENAI001
+//#pragma warning disable OPENAI001
+//            var options = new ChatCompletionOptions
+//            {
+//                ReasoningEffortLevel = ChatReasoningEffortLevel.Low
+//            };
+//#pragma warning restore OPENAI001
 
-            var completionResult = await _mini.CompleteChatAsync(
-                new List<ChatMessage>
-                {
-            new SystemChatMessage(system),
-            new UserChatMessage(userQuestion)
-                },
-                options,
-                ct
-            );
+            var text = await CompleteAsync(system, userQuestion, ct);
 
-            var text = completionResult.Value.Content?[0].Text?.Trim();
+            //var text = completionResult.Value.Content?[0].Text?.Trim();
             _logger.LogInformation("DESIGN Q&A response: {Text}", text);
             return string.IsNullOrWhiteSpace(text)
                 ? "No tengo una respuesta útil en este momento."
@@ -484,7 +484,9 @@ namespace GameProtogenAPI.Services
             var system = """
                             You are a Lua code generator for a small 2D engine.
                             Output ONLY JSON:
-                              { "kind":"script", "fileName":"<suggested>.lua", "code":"<lua source>" }
+                              <<<BEGIN_JSON
+                                { "kind":"script", "fileName":"<suggested>.lua", "code":"<lua source>" }
+                                END_JSON>>>
 
                             Target VM (Lua 5.4, sol2). Scripts run in an environment with:
                               - Global: this_id (uint)
@@ -524,30 +526,30 @@ namespace GameProtogenAPI.Services
                             Deliver JSON only (no fences, no extra text).
                         """;
 
-            var schema = """
-                        {
-                          "type": "object",
-                          "required": ["kind","fileName","code"],
-                          "additionalProperties": false,
-                          "properties": {
-                            "kind": { "type": "string", "const": "script" },
-                            "fileName": { "type": "string" },
-                            "code": { "type": "string" }
-                          }
-                        }
-                        """;
+//            var schema = """
+//                        {
+//                          "type": "object",
+//                          "required": ["kind","fileName","code"],
+//                          "additionalProperties": false,
+//                          "properties": {
+//                            "kind": { "type": "string", "const": "script" },
+//                            "fileName": { "type": "string" },
+//                            "code": { "type": "string" }
+//                          }
+//                        }
+//                        """;
 
-#pragma warning disable OPENAI001
-            var options = new ChatCompletionOptions
-            {
-                ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
-                    jsonSchemaFormatName: "lua_code",
-                    jsonSchema: BinaryData.FromString(schema),
-                    jsonSchemaIsStrict: false
-                ),
-                ReasoningEffortLevel = ChatReasoningEffortLevel.Low
-            };
-#pragma warning restore OPENAI001
+//#pragma warning disable OPENAI001
+//            var options = new ChatCompletionOptions
+//            {
+//                ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
+//                    jsonSchemaFormatName: "lua_code",
+//                    jsonSchema: BinaryData.FromString(schema),
+//                    jsonSchemaIsStrict: false
+//                ),
+//                ReasoningEffortLevel = ChatReasoningEffortLevel.Low
+//            };
+//#pragma warning restore OPENAI001
 
             var user = $"""
                 User request:
@@ -557,11 +559,9 @@ namespace GameProtogenAPI.Services
                 {sceneJson}
                 """;
 
-            var completion = await _mini.CompleteChatAsync(
-                [new SystemChatMessage(system), new UserChatMessage(user)],
-                options, ct);
+            var json = await CompleteAsync(system, user, ct);
 
-            var json = completion.Value.Content?[0].Text ?? "";
+            //var json = completion.Value.Content?[0].Text ?? "";
             json = StripCodeFences(json);
             json = TrimToOuterJsonObject(json);
             _logger.LogInformation("LUA response: {Json}", json);
