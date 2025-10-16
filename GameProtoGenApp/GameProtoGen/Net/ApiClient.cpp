@@ -18,13 +18,14 @@ std::string ApiClient::BuildUrl(const std::string& path) const {
         m_Host.rfind("http://", 0) == 0 || m_Host.rfind("https://", 0) == 0;
 
     const std::string scheme = host_has_scheme ? "" : (m_UseHttps ? "https://" : "http://");
-    std::string hostport = m_Host;
 
+    std::string hostport = m_Host;
     if (!host_has_scheme) {
         if (hostport.find(':') == std::string::npos && m_Port > 0) {
             hostport += ":" + std::to_string(m_Port);
         }
     }
+
     return scheme + hostport + JoinPath(m_BasePath, path);
 }
 
