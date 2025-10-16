@@ -72,7 +72,7 @@ builder.Services.AddSingleton(sp =>
 // 3) Orquestador SK
 builder.Services.AddSingleton<ISkSceneEditOrchestrator, SkSceneEditOrchestrator>();
 
-builder.Services.AddScoped<IImageService, OpenAIImageGenService>();
+builder.Services.AddSingleton<IImageService, OpenAIImageGenService>();
 
 // 4) Tu servicio de LLM (se usa adentro de los plugins)
 var useMock = builder.Configuration.GetValue("LLM:USE_MOCK", false);
