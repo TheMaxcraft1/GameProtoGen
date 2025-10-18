@@ -78,10 +78,8 @@ namespace GameProtogenAPI.Services
                 Language: same as user.
 
                 Routing rules (IMPORTANT):
-                - Return ONLY a JSON object wrapped between the exact markers:
-                    <<<BEGIN_JSON
+                - Return ONLY a JSON object wrapped between the exact markers (DO NOT INCLUDE ANY OTHER COMMENT OR THING LIKE QUOTES EXPRESSING IT'S A JSON):
                     { ... }
-                    END_JSON>>>
                 - JSON shape:
                     {
                       "agents": ["scene_edit"|"design_qa"|"asset_gen"|"script_gen", ...], // 1..3 unique, execution order
@@ -232,10 +230,8 @@ namespace GameProtogenAPI.Services
             // Prompt del "synthesizer" (mini): Plan XML → JSON { "ops": [...] }
             var system = """
                 Convierte el PLAN en una lista de operaciones JSON para un motor 2D.
-                Responde SOLO un objeto JSON con raíz "ops" (sin texto adicional).
-                <<<BEGIN_JSON
+                Responde SOLO un objeto JSON con raíz "ops" (sin texto adicional) DO NOT INCLUDE ANY OTHER COMMENT OR THING LIKE QUOTES EXPRESSING IT'S A JSON.
                     { "ops": [ ... ] }
-                END_JSON>>>
 
                 Operaciones soportadas (usa exactamente estos campos):
                   - spawn_box:
@@ -509,10 +505,8 @@ namespace GameProtogenAPI.Services
         {
             var system = """
                             You are a Lua code generator for a small 2D engine.
-                            Output ONLY JSON:
-                              <<<BEGIN_JSON
+                            Output ONLY JSON (DO NOT INCLUDE ANY OTHER COMMENT OR THING LIKE QUOTES EXPRESSING IT'S A JSON):
                                 { "kind":"script", "fileName":"<suggested>.lua", "code":"<lua source>" }
-                                END_JSON>>>
 
                             Target VM (Lua 5.4, sol2). Scripts run in an environment with:
                               - Global: this_id (uint)
