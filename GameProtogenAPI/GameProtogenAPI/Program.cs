@@ -20,33 +20,18 @@ var openAIPlatformApiKey =
     builder.Configuration["OPENAI_API_KEY"] ??
     Environment.GetEnvironmentVariable("OPENAI_API_KEY");
 
-var azureAIInferenceEndpoint =
-    builder.Configuration["AzureAI:InferenceEndpoint"] ??
-    builder.Configuration["AZURE_INFERENCE_ENDPOINT"] ??
-    Environment.GetEnvironmentVariable("AZURE_INFERENCE_ENDPOINT");
-
-var azureAIInferenceApiKey =
-    builder.Configuration["AzureAI:InferenceApiKey"] ??
-    builder.Configuration["AZURE_INFERENCE_API_KEY"] ??
-    Environment.GetEnvironmentVariable("AZURE_INFERENCE_API_KEY");
-
-if (string.IsNullOrWhiteSpace(azureAIInferenceEndpoint))
-    throw new InvalidOperationException("Falta AzureAI Endpoint (AzureAI:Endpoint o AZURE_OPENAI_ENDPOINT).");
-if (string.IsNullOrWhiteSpace(azureAIInferenceApiKey))
-    throw new InvalidOperationException("Falta AzureAI ApiKey (AzureAI:ApiKey o AZURE_OPENAI_API_KEY).");
 if (string.IsNullOrWhiteSpace(openAIPlatformApiKey))
     throw new InvalidOperationException("Falta OpenAI ApiKey (OpenAI:ApiKey o OPENAI_API_KEY).");
 
 builder.Services.AddSingleton<ImageClient>(_ =>
     new ImageClient("gpt-image-1", openAIPlatformApiKey));
 
-builder.Services.AddSingleton(new ChatCompletionsClient(new Uri(azureAIInferenceEndpoint), new AzureKeyCredential(azureAIInferenceApiKey)));
+//builder.Services.AddSingleton(new ChatCompletionsClient(new Uri(azureAIInferenceEndpoint), new AzureKeyCredential(azureAIInferenceApiKey)));
 
 builder.Services.AddSingleton(sp =>
 {
     // Podés parametrizar el modelo desde config si querés
     var kernel = Kernel.CreateBuilder()
-        .AddAzureAIInferenceChatCompletion("grok-4-fast-reasoning", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
         .Build();
 
     // 2) Agregar plugins (Planner y Synthesizer)
@@ -73,6 +58,7 @@ else
     builder.Services.AddSingleton<ILLMService, LLMService>();
 
 var app = builder.Build();
+
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

@@ -1,4 +1,5 @@
 ﻿using GameProtogenAPI.Services.Contracts;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using OpenAI.Chat;
@@ -13,23 +14,48 @@ namespace GameProtogenAPI.Services
         private readonly ILogger<LLMService> _logger;
         private readonly IImageService _images;
 
-        public LLMService(Kernel kernel, ILogger<LLMService> logger, IImageService images)
-        {
-            _kernel = kernel;
+        public LLMService(ILogger<LLMService> logger, IImageService images, IConfiguration cfg)
+        { 
             _logger = logger;
             _images = images;
+
+            var azureAIInferenceEndpoint =
+                cfg["AzureAI:InferenceEndpoint"] ??
+                cfg["AZURE_INFERENCE_ENDPOINT"] ??
+                Environment.GetEnvironmentVariable("AZURE_INFERENCE_ENDPOINT");
+
+            var azureAIInferenceApiKey =
+                cfg["AzureAI:InferenceApiKey"] ??
+                cfg["AZURE_INFERENCE_API_KEY"] ??
+                Environment.GetEnvironmentVariable("AZURE_INFERENCE_API_KEY");
+
+            if (string.IsNullOrWhiteSpace(azureAIInferenceEndpoint))
+                throw new InvalidOperationException("Falta AzureAI Endpoint (AzureAI:Endpoint o AZURE_OPENAI_ENDPOINT).");
+            if (string.IsNullOrWhiteSpace(azureAIInferenceApiKey))
+                throw new InvalidOperationException("Falta AzureAI ApiKey (AzureAI:ApiKey o AZURE_OPENAI_API_KEY).");
+
+            _kernel = Kernel.CreateBuilder()
+                .AddAzureAIInferenceChatCompletion("grok-4-fast-reasoning", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
+                .Build();
         }
 
         private async Task<string> CompleteAsync(string system, string user, CancellationToken ct, double temperature = 0.2)
         {
-            var chat = _kernel.GetRequiredService<IChatCompletionService>();
+            try
+            {
+                var chat = _kernel.GetRequiredService<IChatCompletionService>();
 
-            var history = new ChatHistory();
-            history.AddSystemMessage(system);
-            history.AddUserMessage(user);
+                var history = new ChatHistory();
+                history.AddSystemMessage(system);
+                history.AddUserMessage(user);
 
-            var result = await chat.GetChatMessageContentAsync(history);
-            return result?.Content ?? string.Empty;
+                var result = await chat.GetChatMessageContentAsync(history);
+                return result?.Content ?? string.Empty;
+            }
+            catch(Exception ex)
+            {
+                throw;
+            }
         }
 
         public async Task<string> RouteAsync(string userPrompt, string sceneJson, CancellationToken ct = default)
