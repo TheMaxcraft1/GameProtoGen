@@ -153,7 +153,7 @@ add_executable(GameProtoGen
     # ImGui extra
     ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
     
-)
+ "Auth/PKCE.h" "Auth/PKCE.cpp")
 
  target_sources(GameProtoGen PRIVATE
     ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
@@ -168,6 +168,7 @@ target_link_libraries(GameProtoGen PRIVATE
   cpr::cpr
   lua_static
   tinyfiledialogs_lib 
+  cppcodec                 
   httplib::httplib
 )
 
@@ -190,7 +191,6 @@ target_include_directories(GameProtoGen PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${IMGUI_DIR}/misc/cpp
     ${sol2_SOURCE_DIR}/include
-    ${cppcodec_SOURCE_DIR}/include
     ${picosha2_SOURCE_DIR}
 )
 
