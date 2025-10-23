@@ -102,6 +102,29 @@ FetchContent_Declare(imgui-sfml
 FetchContent_MakeAvailable(imgui-sfml)
 # Target: ImGui-SFML::ImGui-SFML
 
+# ----------- AUTH ------------
+# --- Auth deps (header-only) ---
+# cpp-httplib (servidor HTTP embebido)
+FetchContent_Declare(cpp-httplib
+  GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+  GIT_TAG v0.15.3
+)
+FetchContent_MakeAvailable(cpp-httplib) # target: httplib::httplib
+
+# cppcodec (Base64 URL-safe unpadded)
+FetchContent_Declare(cppcodec
+  GIT_REPOSITORY https://github.com/tplgy/cppcodec.git
+  GIT_TAG v0.2
+)
+FetchContent_MakeAvailable(cppcodec) # target: cppcodec (INTERFACE)
+
+# picosha2 (SHA-256)
+FetchContent_Declare(picosha2
+  GIT_REPOSITORY https://github.com/okdshin/PicoSHA2.git
+  GIT_TAG master
+)
+FetchContent_MakeAvailable(picosha2)
+
 # ---------- Tu ejecutable ----------
 add_executable(GameProtoGen
     Core/Application.cpp
@@ -145,6 +168,7 @@ target_link_libraries(GameProtoGen PRIVATE
   cpr::cpr
   lua_static
   tinyfiledialogs_lib 
+  httplib::httplib
 )
 
 # Copia toda la carpeta Assets al directorio donde queda la .exe (Debug/Release)
@@ -166,5 +190,7 @@ target_include_directories(GameProtoGen PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${IMGUI_DIR}/misc/cpp
     ${sol2_SOURCE_DIR}/include
+    ${cppcodec_SOURCE_DIR}/include
+    ${picosha2_SOURCE_DIR}
 )
 
