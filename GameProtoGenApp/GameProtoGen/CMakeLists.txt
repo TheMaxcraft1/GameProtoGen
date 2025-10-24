@@ -4,7 +4,7 @@ project(GameProtoGen LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Recomendado: si usás Ninja, que los libs salgan a un lugar predecible
+# Salidas predecibles
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -30,33 +30,30 @@ add_library(lua_static ${lua_SOURCE_DIR}/lapi.c ${lua_SOURCE_DIR}/lauxlib.c
     ${lua_SOURCE_DIR}/lutf8lib.c ${lua_SOURCE_DIR}/lvm.c ${lua_SOURCE_DIR}/lzio.c)
 target_include_directories(lua_static PUBLIC ${lua_SOURCE_DIR})
 
-# --- sol2 (header-only) ---
+# --- sol2 ---
 FetchContent_Declare(sol2
   GIT_REPOSITORY https://github.com/ThePhD/sol2.git
   GIT_TAG v3.3.0
 )
 FetchContent_MakeAvailable(sol2)
 
-# ---------- SFML 3 ----------
-# (Desactiva tests/ejemplos para acelerar)
+# --- SFML 3 ---
 set(SFML_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SFML_BUILD_TESTING  OFF CACHE BOOL "" FORCE)
-
 FetchContent_Declare(sfml
   GIT_REPOSITORY https://github.com/SFML/SFML.git
   GIT_TAG 3.0.0
 )
 FetchContent_MakeAvailable(sfml)
-# Targets que exporta: SFML::System SFML::Window SFML::Graphics ...
 
-# ---------- nlohmann/json ----------
+# --- nlohmann/json ---
 FetchContent_Declare(json
   GIT_REPOSITORY https://github.com/nlohmann/json.git
   GIT_TAG v3.11.3
 )
 FetchContent_MakeAvailable(json)
 
-# ---------- tinyfiledialogs (file picker nativo) ----------
+# --- tinyfiledialogs ---
 FetchContent_Declare(tinyfiledialogs
   GIT_REPOSITORY https://github.com/native-toolkit/tinyfiledialogs.git
   GIT_TAG master
@@ -65,67 +62,69 @@ FetchContent_MakeAvailable(tinyfiledialogs)
 add_library(tinyfiledialogs_lib ${tinyfiledialogs_SOURCE_DIR}/tinyfiledialogs.c)
 target_include_directories(tinyfiledialogs_lib PUBLIC ${tinyfiledialogs_SOURCE_DIR})
 
-# ---------- cpr (async HTTP over libcurl) ----------
+# --- cpr ---
 set(CPR_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-# Si no tenés libcurl del sistema, esto compila uno embebido (más lento la primera vez).
 set(CPR_USE_SYSTEM_CURL OFF CACHE BOOL "" FORCE)
-
 FetchContent_Declare(cpr
   GIT_REPOSITORY https://github.com/libcpr/cpr.git
   GIT_TAG 1.11.1
 )
 FetchContent_MakeAvailable(cpr)
 
-# ---------- Dear ImGui (rama docking) ----------
+# --- ImGui ---
 FetchContent_Declare(imgui
   GIT_REPOSITORY https://github.com/ocornut/imgui.git
   GIT_TAG v1.91.9-docking
 )
 FetchContent_MakeAvailable(imgui)
 set(IMGUI_DIR ${imgui_SOURCE_DIR})
-# Esto crea un target 'imgui' (lib) + incluye headers <imgui.h>
 
-# ---------- ImGui-SFML 3.0 ----------
-# IMPORTANTE:
-# - Esta versión soporta SFML 3.
-# - Como ya tenemos SFML e ImGui en el mismo árbol, no necesitamos que los "encuentre" fuera.
-# - Por defecto ImGui-SFML intentará find_package(SFML 3) y 'imgui' target, que ya existen.
-
-# (Opcional) apaga su build de ejemplo/tests para acelerar
+# --- ImGui-SFML ---
 set(IMGUI_SFML_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(IMGUI_SFML_BUILD_TESTING  OFF CACHE BOOL "" FORCE)
-
 FetchContent_Declare(imgui-sfml
   GIT_REPOSITORY https://github.com/SFML/imgui-sfml.git
   GIT_TAG master
 )
 FetchContent_MakeAvailable(imgui-sfml)
-# Target: ImGui-SFML::ImGui-SFML
 
-# ----------- AUTH ------------
-# --- Auth deps (header-only) ---
-# cpp-httplib (servidor HTTP embebido)
+# ----------- AUTH deps -----------
+# cpp-httplib
 FetchContent_Declare(cpp-httplib
   GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
   GIT_TAG v0.15.3
 )
 FetchContent_MakeAvailable(cpp-httplib) # target: httplib::httplib
 
-# cppcodec (Base64 URL-safe unpadded)
+# --- cppcodec (no tiene CMake; headers en <repo>/cppcodec/*.hpp) ---
 FetchContent_Declare(cppcodec
   GIT_REPOSITORY https://github.com/tplgy/cppcodec.git
   GIT_TAG v0.2
 )
-FetchContent_MakeAvailable(cppcodec) # target: cppcodec (INTERFACE)
 
-# picosha2 (SHA-256)
+FetchContent_GetProperties(cppcodec)
+if (NOT cppcodec_POPULATED)
+  FetchContent_Populate(cppcodec)
+  if (NOT TARGET cppcodec)
+    add_library(cppcodec INTERFACE)
+    # OJO: headers están en ${cppcodec_SOURCE_DIR}/cppcodec/...
+    target_include_directories(cppcodec INTERFACE ${cppcodec_SOURCE_DIR})
+  endif()
+endif()
+
+# (Opcional) fallá temprano si el header no existe
+if (NOT EXISTS "${cppcodec_SOURCE_DIR}/cppcodec/base64_url_unpadded.hpp")
+  message(FATAL_ERROR "No se encontró ${cppcodec_SOURCE_DIR}/cppcodec/base64_url_unpadded.hpp")
+endif()
+
+# picosha2 (header-only SHA256)
 FetchContent_Declare(picosha2
   GIT_REPOSITORY https://github.com/okdshin/PicoSHA2.git
   GIT_TAG master
 )
 FetchContent_MakeAvailable(picosha2)
 
-# ---------- Tu ejecutable ----------
+# ---------- Ejecutable ----------
 add_executable(GameProtoGen
     Core/Application.cpp
     Core/SFMLWindow.cpp
@@ -150,12 +149,15 @@ add_executable(GameProtoGen
     # Net
     Net/ApiClient.cpp
 
+    # Auth
+    Auth/PKCE.h
+    Auth/PKCE.cpp
+
     # ImGui extra
     ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
-    
- "Auth/PKCE.h" "Auth/PKCE.cpp")
+ "Auth/LoopbackServer.h" "Auth/OidcClient.cpp")
 
- target_sources(GameProtoGen PRIVATE
+target_sources(GameProtoGen PRIVATE
     ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
 )
 
@@ -167,12 +169,21 @@ target_link_libraries(GameProtoGen PRIVATE
   nlohmann_json::nlohmann_json
   cpr::cpr
   lua_static
-  tinyfiledialogs_lib 
-  cppcodec                 
+  tinyfiledialogs_lib
   httplib::httplib
+  cppcodec                 # <- acá linkeás el INTERFACE (propaga include)
 )
 
-# Copia toda la carpeta Assets al directorio donde queda la .exe (Debug/Release)
+target_include_directories(GameProtoGen PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${IMGUI_DIR}/misc/cpp
+    ${sol2_SOURCE_DIR}/include
+    ${picosha2_SOURCE_DIR}           # para <picosha2.h>
+    # opcional, redundante porque ya viene por cppcodec INTERFACE:
+    ${cppcodec_SOURCE_DIR}    # para <cppcodec/base64_url_unpadded.hpp>
+)
+
+# Copiar Assets junto al .exe
 add_custom_command(TARGET GameProtoGen POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             ${CMAKE_SOURCE_DIR}/Assets
@@ -186,11 +197,3 @@ endif()
 if (MSVC)
   add_compile_options("/utf-8")
 endif()
-
-target_include_directories(GameProtoGen PRIVATE 
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${IMGUI_DIR}/misc/cpp
-    ${sol2_SOURCE_DIR}/include
-    ${picosha2_SOURCE_DIR}
-)
-

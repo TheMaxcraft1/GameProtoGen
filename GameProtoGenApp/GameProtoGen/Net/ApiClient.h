@@ -35,11 +35,13 @@ public:
     // Útil cuando migres a AWS (HTTPS).
     void UseHttps(bool on) { m_UseHttps = on; }
     void SetVerifySsl(bool verify) { m_VerifySsl = verify; }
+    void SetAccessToken(std::string token) { m_AccessToken = std::move(token); }
 
 private:
     std::string m_Host;
     int m_Port;
     std::string m_BasePath = "/api";
+    std::string m_AccessToken;
 
     int m_ConnectTimeoutSec = 2;
     int m_ReadTimeoutSec = 5;

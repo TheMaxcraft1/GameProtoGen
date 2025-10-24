@@ -37,10 +37,15 @@ std::optional<json> ApiClient::SendCommand(const std::string& prompt,
 
     const long xfer_ms =
         static_cast<long>((std::max)(m_ReadTimeoutSec, m_WriteTimeoutSec)) * 1000L;
+    
+    cpr::Header hdr{ {"Content-Type","application/json"} };
+    if (!m_AccessToken.empty()) {
+        hdr["Authorization"] = "Bearer " + m_AccessToken;
+    }
 
     cpr::Response res = cpr::Post(
         cpr::Url{ url },
-        cpr::Header{ {"Content-Type","application/json"} },
+        hdr,
         cpr::Body{ req.dump() },
         cpr::ConnectTimeout{ m_ConnectTimeoutSec * 1000 },
         cpr::Timeout{ xfer_ms },
@@ -70,9 +75,14 @@ std::future<ApiClient::Result> ApiClient::SendCommandAsync(std::string prompt,
         static_cast<long>((std::max)(m_ReadTimeoutSec, m_WriteTimeoutSec)) * 1000L;
     const bool verify = m_VerifySsl;
 
+    cpr::Header hdr{ {"Content-Type","application/json"} };
+    if (!m_AccessToken.empty()) {
+        hdr["Authorization"] = "Bearer " + m_AccessToken;
+    }
+
     auto async_resp = cpr::PostAsync(
         cpr::Url{ url },
-        cpr::Header{ {"Content-Type","application/json"} },
+        hdr,
         cpr::Body{ json({{"prompt", std::move(prompt)}, {"scene", std::move(scene)}}).dump() },
         cpr::ConnectTimeout{ connect_ms },
         cpr::Timeout{ xfer_ms },
