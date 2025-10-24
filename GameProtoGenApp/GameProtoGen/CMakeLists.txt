@@ -152,10 +152,14 @@ add_executable(GameProtoGen
     # Auth
     Auth/PKCE.h
     Auth/PKCE.cpp
+    Auth/OidcClient.h
+    Auth/OidcClient.cpp
+    Auth/LoopbackServer.h
+    Auth/LoopbackServer.cpp
 
     # ImGui extra
     ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
- "Auth/LoopbackServer.h" "Auth/OidcClient.cpp")
+)
 
 target_sources(GameProtoGen PRIVATE
     ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp

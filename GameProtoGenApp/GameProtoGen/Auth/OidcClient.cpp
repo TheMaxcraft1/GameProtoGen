@@ -1,15 +1,41 @@
+#include <cppcodec/base64_url_unpadded.hpp>
 #include "OidcClient.h"
-#include "Pkce.h"
+#include "PKCE.h"                 // OJO: respeta mayúsculas como está en tu CMake
 #include "LoopbackServer.h"
+
 #include <nlohmann/json.hpp>
 #include <cpr/cpr.h>
-#include <cppcodec/base64_url_unpadded.hpp>
+#include <cpr/util.h>
+
 #include <sstream>
+#include <cstdlib>  // std::system
+
+// Evitá macro conflicts de Windows
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
+#endif
+#ifdef _WIN32
+#include <shellapi.h>  // <- necesario para ShellExecuteA
+#endif
 
-
+// ---------- helpers ----------
 static void open_browser(const std::string& url) {
+#ifdef _WIN32
     ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+#elif __APPLE__
+    std::string cmd = "open \"" + url + "\"";
+    std::system(cmd.c_str());
+#else
+    std::string cmd = "xdg-open \"" + url + "\"";
+    std::system(cmd.c_str());
+#endif
+} // <<< ESTA LLAVE FALTABA
 
 
 static std::string join_scopes(const std::vector<std::string>& scopes) {
@@ -21,6 +47,12 @@ static std::string join_scopes(const std::vector<std::string>& scopes) {
     return oss.str();
 }
 
+// <<< FALTABA ESTO >>>
+static inline std::string enc(const std::string& s) {
+    return cpr::util::urlEncode(s);
+}
+
+// ---------- métodos ----------
 std::optional<OidcTokens> OidcClient::AcquireTokenInteractive(std::string* err) {
     LoopbackServer server;
     if (!server.Start()) {
@@ -31,22 +63,20 @@ std::optional<OidcTokens> OidcClient::AcquireTokenInteractive(std::string* err) 
     // PKCE
     const auto pkce = GeneratePkcePair();
 
-    // state anti-CSRF (simple, 16 bytes base64url)
-    const std::string state = cppcodec::base64_url_unpadded::encode("st-" + pkce.verifier.substr(0, 16));
+    const std::string state =
+        cppcodec::base64_url_unpadded::encode("st-" + pkce.verifier.substr(0, 16));
 
-    // Armar URL de /authorize
-    // Nota: usar EXACTAMENTE los endpoints que te dio .well-known (con tenantId y policy)
-    cpr::Parameters q{
-        {"client_id",     m_Cfg.client_id},
-        {"response_type", "code"},
-        {"redirect_uri",  server.RedirectUri()},
-        {"response_mode", "query"},
-        {"scope",         join_scopes(m_Cfg.scopes)},
-        {"code_challenge", pkce.challenge},
-        {"code_challenge_method", "S256"},
-        {"state", state}
-    };
-    const std::string authz_url = m_Cfg.authorize_endpoint + "?" + q.GetContent(cpr::Url{}).substr(1); // sin '?'
+    // ⚠️ Construir la URL a mano (sin cpr::Parameters::GetContent ni .parameters)
+    const std::string authz_url =
+        m_Cfg.authorize_endpoint
+        + "?client_id=" + enc(m_Cfg.client_id)
+        + "&response_type=code"
+        + "&redirect_uri=" + enc(server.RedirectUri())
+        + "&response_mode=query"
+        + "&scope=" + enc(join_scopes(m_Cfg.scopes))
+        + "&code_challenge=" + enc(pkce.challenge)
+        + "&code_challenge_method=S256"
+        + "&state=" + enc(state);
 
     open_browser(authz_url);
 
@@ -65,7 +95,7 @@ std::optional<OidcTokens> OidcClient::AcquireTokenInteractive(std::string* err) 
         return std::nullopt;
     }
 
-    // Canjear code por tokens
+    // Intercambiar code por tokens
     cpr::Payload form{
         {"grant_type", "authorization_code"},
         {"client_id", m_Cfg.client_id},

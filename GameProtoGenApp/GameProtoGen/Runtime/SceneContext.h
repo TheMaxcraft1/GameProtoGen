@@ -3,6 +3,7 @@
 #include <SFML/System/Vector2.hpp>   // 👈 necesario para sf::Vector2f
 #include "ECS/Scene.h"
 #include "ECS/Entity.h"
+#include "Net/ApiClient.h"
 
 struct SceneContext {
     std::shared_ptr<Scene> scene;
@@ -10,6 +11,8 @@ struct SceneContext {
 
     // Centro actual de la cámara (lo mantiene ViewportPanel)
     sf::Vector2f cameraCenter{ 800.f, 450.f };
+
+    std::shared_ptr<ApiClient> apiClient;
 
     // Estado de ejecución (simulación)
     struct RuntimeState {

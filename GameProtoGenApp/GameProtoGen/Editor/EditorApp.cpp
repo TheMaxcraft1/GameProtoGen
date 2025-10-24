@@ -75,14 +75,16 @@ public:
         PushLayer(new ImGuiLayer(win));
         PushLayer(new ViewportPanel());
         PushLayer(new InspectorPanel());
-        auto client = std::make_shared<ApiClient>("https://ca-game-protogen.purplehill-2f1636cc.brazilsouth.azurecontainerapps.io");
-        client->SetVerifySsl(true); 
+        //auto client = std::make_shared<ApiClient>("https://ca-game-protogen.purplehill-2f1636cc.brazilsouth.azurecontainerapps.io");
+        auto client = std::make_shared<ApiClient>("http://localhost:5097");
+        //client->SetVerifySsl(true); 
         client->SetTimeouts(10, 180, 30);
         PushLayer(new ChatPanel(client));
 
         // Semilla / Carga de proyecto
         auto& ctx = SceneContext::Get();
         ctx.scene = std::make_shared<Scene>();
+		ctx.apiClient = client;
 
         bool loaded = false;
         const char* kProjPath = "Saves/scene.json";;

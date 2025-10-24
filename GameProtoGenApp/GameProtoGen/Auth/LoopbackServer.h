@@ -10,7 +10,7 @@ public:
     void Stop();
 
     // URI para registrar en el auth request
-    std::string RedirectUri() const { return "http://127.0.0.1:" + std::to_string(m_Port) + "/"; }
+    std::string RedirectUri() const { return "http://" + m_Host + ":" + std::to_string(m_Port) + "/"; }
 
     // Espera a que llegue el /?code=...&state=...
     // Devuelve true si obtuvo code (y state) antes del timeout_ms
@@ -20,6 +20,7 @@ public:
     const std::string& State() const { return m_State; }
 
 private:
+    std::string m_Host = "localhost";
     int m_Port = 0;
     std::atomic<bool> m_Running{ false };
     std::promise<void> m_Ready;

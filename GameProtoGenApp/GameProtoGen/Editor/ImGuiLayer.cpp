@@ -11,6 +11,9 @@
 #include <imgui_internal.h>
 #include <filesystem>
 #include <Systems/Renderer2D.h>
+#include "Auth/OidcClient.h"
+#include "Net/ApiClient.h"
+
 
 // Helpers Files/Proyecto
 namespace {
@@ -24,6 +27,35 @@ namespace {
         if (ec) {
             ViewportPanel::AppendLog(std::string("[SAVE] ERROR creando carpeta: ") + ec.message());
         }
+    }
+
+    static void DoLoginInteractive() {
+        auto& ctx = SceneContext::Get();
+        if (!ctx.apiClient) {
+            ViewportPanel::AppendLog("[AUTH] ApiClient no inicializado");
+            return;
+        }
+
+        // Rellená estos valores con tu IdP (Auth0 / Azure AD / Okta / etc.)
+        // Ejemplo Azure AD (authority = https://login.microsoftonline.com/<tenant>/oauth2/v2.0)
+        OidcConfig cfg;
+        cfg.client_id = "2041dbc5-c266-43aa-af66-765b1440f34a";
+        cfg.authorize_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/authorize";
+        cfg.token_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/token";
+        cfg.scopes = { "openid", "profile", "offline_access" }; //  "<api-scope-si-aplica>"
+
+        OidcClient oidc(cfg);
+        std::string err;
+        auto tokens = oidc.AcquireTokenInteractive(&err);
+        if (!tokens) {
+            ViewportPanel::AppendLog(std::string("[AUTH] Error: ") + err);
+            return;
+        }
+
+        ctx.apiClient->SetAccessToken(tokens->access_token);
+        ViewportPanel::AppendLog("[AUTH] Login OK. access_token seteado en ApiClient.");
+        if (!tokens->refresh_token.empty())
+            ViewportPanel::AppendLog("[AUTH] refresh_token presente (guardalo si querés renovar más tarde).");
     }
 
     // Fallback post-load por si abrís un JSON viejo sin física/controlador
@@ -247,6 +279,10 @@ void ImGuiLayer::OnGuiRender() {
         if (ImGui::BeginMenu("Proyecto", !playing)) {
             if (ImGui::MenuItem("Guardar", "Ctrl+S")) DoSave();
             if (ImGui::MenuItem("Cargar", "Ctrl+O")) DoLoad();
+            ImGui::Separator();
+            if (ImGui::MenuItem("Iniciar sesión…")) {
+                DoLoginInteractive();
+            }
             ImGui::Separator();
             if (ImGui::MenuItem("Salir", "Alt+F4")) {
                 gp::Application::Get().RequestClose();
