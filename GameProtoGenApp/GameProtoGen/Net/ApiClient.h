@@ -4,6 +4,7 @@
 #include <future>
 #include <utility>
 #include <nlohmann/json.hpp>
+#include <functional>  
 
 class ApiClient {
 public:
@@ -16,6 +17,12 @@ public:
         std::string error;
         bool ok() const { return data.has_value() && error.empty(); }
     };
+
+    using RefreshFn = std::function<std::optional<std::string>()>;
+    using PreflightFn = std::function<void()>;
+
+    void SetTokenRefresher(RefreshFn fn) { m_OnRefresh = std::move(fn); }
+    void SetPreflight(PreflightFn fn) { m_OnPreflight = std::move(fn); }
 
     std::optional<nlohmann::json> SendCommand(const std::string& prompt,
         const nlohmann::json& scene,
@@ -31,8 +38,6 @@ public:
     }
 
     void SetBasePath(std::string basePath) { m_BasePath = std::move(basePath); }
-
-    // Útil cuando migres a AWS (HTTPS).
     void UseHttps(bool on) { m_UseHttps = on; }
     void SetVerifySsl(bool verify) { m_VerifySsl = verify; }
     void SetAccessToken(std::string token) { m_AccessToken = std::move(token); }
@@ -42,6 +47,9 @@ private:
     int m_Port;
     std::string m_BasePath = "/api";
     std::string m_AccessToken;
+
+    RefreshFn  m_OnRefresh;    
+    PreflightFn m_OnPreflight; 
 
     int m_ConnectTimeoutSec = 2;
     int m_ReadTimeoutSec = 5;

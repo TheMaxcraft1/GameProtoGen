@@ -159,7 +159,7 @@ add_executable(GameProtoGen
 
     # ImGui extra
     ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
-)
+ "Auth/TokenManager.h")
 
 target_sources(GameProtoGen PRIVATE
     ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp

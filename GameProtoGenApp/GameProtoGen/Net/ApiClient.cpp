@@ -1,7 +1,7 @@
 #include "ApiClient.h"
 #include <cpr/cpr.h>
 #include <nlohmann/json.hpp>
-#include <algorithm>   // <-- necesario para std::max
+#include <algorithm>   // std::max
 #include <utility>
 
 using json = nlohmann::json;
@@ -32,25 +32,46 @@ std::string ApiClient::BuildUrl(const std::string& path) const {
 std::optional<json> ApiClient::SendCommand(const std::string& prompt,
     const json& scene,
     std::string* err) {
+    // Preflight proactivo (opcional)
+    if (m_OnPreflight) m_OnPreflight();
+
     const std::string url = BuildUrl("/chat/command");
     json req = { {"prompt", prompt}, {"scene", scene} };
 
     const long xfer_ms =
         static_cast<long>((std::max)(m_ReadTimeoutSec, m_WriteTimeoutSec)) * 1000L;
-    
-    cpr::Header hdr{ {"Content-Type","application/json"} };
-    if (!m_AccessToken.empty()) {
-        hdr["Authorization"] = "Bearer " + m_AccessToken;
-    }
+
+    auto build_hdr = [this]() {
+        cpr::Header hdr{ {"Content-Type","application/json"} };
+        if (!m_AccessToken.empty()) {
+            hdr["Authorization"] = "Bearer " + m_AccessToken;
+        }
+        return hdr;
+        };
 
     cpr::Response res = cpr::Post(
         cpr::Url{ url },
-        hdr,
+        build_hdr(),
         cpr::Body{ req.dump() },
         cpr::ConnectTimeout{ m_ConnectTimeoutSec * 1000 },
         cpr::Timeout{ xfer_ms },
         cpr::VerifySsl{ m_VerifySsl }
     );
+
+    // Retry una sola vez si 401: intentar refresh y reintentar
+    if (res.status_code == 401 && m_OnRefresh) {
+        if (auto newTok = m_OnRefresh()) {
+            m_AccessToken = *newTok;
+            res = cpr::Post(
+                cpr::Url{ url },
+                build_hdr(),
+                cpr::Body{ req.dump() },
+                cpr::ConnectTimeout{ m_ConnectTimeoutSec * 1000 },
+                cpr::Timeout{ xfer_ms },
+                cpr::VerifySsl{ m_VerifySsl }
+            );
+        }
+    }
 
     if (res.error.code != cpr::ErrorCode::OK) {
         if (err) *err = res.error.message;
@@ -75,35 +96,61 @@ std::future<ApiClient::Result> ApiClient::SendCommandAsync(std::string prompt,
         static_cast<long>((std::max)(m_ReadTimeoutSec, m_WriteTimeoutSec)) * 1000L;
     const bool verify = m_VerifySsl;
 
-    cpr::Header hdr{ {"Content-Type","application/json"} };
-    if (!m_AccessToken.empty()) {
-        hdr["Authorization"] = "Bearer " + m_AccessToken;
-    }
+    auto make_hdr = [this]() {
+        cpr::Header hdr{ {"Content-Type","application/json"} };
+        if (!m_AccessToken.empty()) {
+            hdr["Authorization"] = "Bearer " + m_AccessToken;
+        }
+        return hdr;
+        };
+
+    // Preparamos el cuerpo una vez para reusarlo en el retry
+    std::string body = json({ {"prompt", std::move(prompt)}, {"scene", std::move(scene)} }).dump();
+
+    // Preflight proactivo fuera del hilo (opcional)
+    if (m_OnPreflight) m_OnPreflight();
 
     auto async_resp = cpr::PostAsync(
         cpr::Url{ url },
-        hdr,
-        cpr::Body{ json({{"prompt", std::move(prompt)}, {"scene", std::move(scene)}}).dump() },
+        make_hdr(),
+        cpr::Body{ body },
         cpr::ConnectTimeout{ connect_ms },
         cpr::Timeout{ xfer_ms },
         cpr::VerifySsl{ verify }
     );
 
-    return std::async(std::launch::async, [ar = std::move(async_resp)]() mutable -> Result {
-        Result r;
-        cpr::Response res = ar.get();  // <-- .get() (no ->get())
+    return std::async(std::launch::async,
+        [ar = std::move(async_resp), this, url, connect_ms, xfer_ms, verify, body, make_hdr]() mutable -> Result {
+            Result r;
 
-        if (res.error.code != cpr::ErrorCode::OK) {
-            r.error = res.error.message;
+            cpr::Response res = ar.get();  // <-- .get()
+
+            // Retry una vez si 401
+            if (res.status_code == 401 && m_OnRefresh) {
+                if (auto newTok = m_OnRefresh()) {
+                    m_AccessToken = *newTok;
+                    res = cpr::Post(
+                        cpr::Url{ url },
+                        make_hdr(),
+                        cpr::Body{ body },
+                        cpr::ConnectTimeout{ connect_ms },
+                        cpr::Timeout{ xfer_ms },
+                        cpr::VerifySsl{ verify }
+                    );
+                }
+            }
+
+            if (res.error.code != cpr::ErrorCode::OK) {
+                r.error = res.error.message;
+                return r;
+            }
+            if (res.status_code == 200) {
+                try { r.data = json::parse(res.text); }
+                catch (const std::exception& e) { r.error = std::string("Invalid JSON: ") + e.what(); }
+            }
+            else {
+                r.error = "HTTP status " + std::to_string(res.status_code);
+            }
             return r;
-        }
-        if (res.status_code == 200) {
-            try { r.data = json::parse(res.text); }
-            catch (const std::exception& e) { r.error = std::string("Invalid JSON: ") + e.what(); }
-        }
-        else {
-            r.error = "HTTP status " + std::to_string(res.status_code);
-        }
-        return r;
         });
 }

@@ -4,6 +4,7 @@
 #include "ECS/Scene.h"
 #include "ECS/Entity.h"
 #include "Net/ApiClient.h"
+#include "Auth/TokenManager.h"
 
 struct SceneContext {
     std::shared_ptr<Scene> scene;
@@ -13,6 +14,7 @@ struct SceneContext {
     sf::Vector2f cameraCenter{ 800.f, 450.f };
 
     std::shared_ptr<ApiClient> apiClient;
+    std::shared_ptr<TokenManager> tokenManager;
 
     // Estado de ejecución (simulación)
     struct RuntimeState {

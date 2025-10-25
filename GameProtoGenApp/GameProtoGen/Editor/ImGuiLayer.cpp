@@ -13,6 +13,7 @@
 #include <Systems/Renderer2D.h>
 #include "Auth/OidcClient.h"
 #include "Net/ApiClient.h"
+#include "Auth/TokenManager.h"
 
 
 // Helpers Files/Proyecto
@@ -36,13 +37,12 @@ namespace {
             return;
         }
 
-        // Rellená estos valores con tu IdP (Auth0 / Azure AD / Okta / etc.)
-        // Ejemplo Azure AD (authority = https://login.microsoftonline.com/<tenant>/oauth2/v2.0)
+        // Config de tu Azure External ID (B2C)
         OidcConfig cfg;
         cfg.client_id = "2041dbc5-c266-43aa-af66-765b1440f34a";
         cfg.authorize_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/authorize";
         cfg.token_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/token";
-        cfg.scopes = { "openid", "profile", "offline_access" }; //  "<api-scope-si-aplica>"
+        cfg.scopes = { "openid", "profile", "offline_access" };
 
         OidcClient oidc(cfg);
         std::string err;
@@ -52,10 +52,21 @@ namespace {
             return;
         }
 
+        // Crear/actualizar TokenManager en el contexto
+        if (!ctx.tokenManager) ctx.tokenManager = std::make_shared<TokenManager>(cfg);
+        ctx.tokenManager->OnInteractiveLogin(*tokens);
+
+        // Conectar ApiClient con los tokens + refresher
         ctx.apiClient->SetAccessToken(tokens->access_token);
+        ctx.apiClient->SetTokenRefresher([mgr = ctx.tokenManager]() -> std::optional<std::string> {
+            return mgr->Refresh();
+            });
+        // (Opcional) preflight proactivo antes de cada request
+        ctx.apiClient->SetPreflight([mgr = ctx.tokenManager]() { (void)mgr->EnsureFresh(); });
+
         ViewportPanel::AppendLog("[AUTH] Login OK. access_token seteado en ApiClient.");
         if (!tokens->refresh_token.empty())
-            ViewportPanel::AppendLog("[AUTH] refresh_token presente (guardalo si querés renovar más tarde).");
+            ViewportPanel::AppendLog("[AUTH] refresh_token presente (persistido en Saves/tokens.json).");
     }
 
     // Fallback post-load por si abrís un JSON viejo sin física/controlador

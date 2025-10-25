@@ -35,8 +35,7 @@ static void open_browser(const std::string& url) {
     std::string cmd = "xdg-open \"" + url + "\"";
     std::system(cmd.c_str());
 #endif
-} // <<< ESTA LLAVE FALTABA
-
+}
 
 static std::string join_scopes(const std::vector<std::string>& scopes) {
     std::ostringstream oss;

@@ -11,6 +11,7 @@
 #include "ImGuiLayer.h"
 #include <filesystem>
 #include <Systems/Renderer2D.h>
+#include <Auth/TokenManager.h>
 
 // Helper: asegurar que hay un jugador “jugable”
 static void EnsurePlayable(Scene& scene, Entity& outSelected) {
@@ -85,6 +86,27 @@ public:
         auto& ctx = SceneContext::Get();
         ctx.scene = std::make_shared<Scene>();
 		ctx.apiClient = client;
+
+        OidcConfig cfg;
+        cfg.client_id = "2041dbc5-c266-43aa-af66-765b1440f34a";
+        cfg.authorize_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/authorize";
+        cfg.token_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/token";
+        cfg.scopes = { "openid", "profile", "offline_access" };
+
+        // ✅ construir el TokenManager con cfg
+        ctx.tokenManager = std::make_shared<TokenManager>(cfg);
+        if (ctx.tokenManager->Load()) {
+            // Preflight y refresher
+            ctx.apiClient->SetTokenRefresher([mgr = ctx.tokenManager]() -> std::optional<std::string> {
+                return mgr->Refresh();
+                });
+            ctx.apiClient->SetPreflight([mgr = ctx.tokenManager]() { (void)mgr->EnsureFresh(); });
+
+            // Si el access sigue válido, lo ponemos; si no, EnsureFresh intentará renovarlo
+            if (!ctx.tokenManager->AccessToken().empty())
+                ctx.apiClient->SetAccessToken(ctx.tokenManager->AccessToken());
+            ctx.tokenManager->EnsureFresh(); // opcional, forzá refresh si hace falta
+        }
 
         bool loaded = false;
         const char* kProjPath = "Saves/scene.json";;
