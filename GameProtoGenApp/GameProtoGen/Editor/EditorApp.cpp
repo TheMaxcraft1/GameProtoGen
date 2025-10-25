@@ -13,6 +13,7 @@
 #include <Systems/Renderer2D.h>
 #include <Auth/TokenManager.h>
 #include "Editor/LauncherLayer.h"
+#include "Editor/ImGuiCoreLayer.h"
 
 // Helper: asegurar que hay un jugador “jugable”
 static void EnsurePlayable(Scene& scene, Entity& outSelected) {
@@ -74,7 +75,7 @@ public:
     using gp::Application::Application;
     void Setup() {
         auto& win = static_cast<gp::SFMLWindow&>(Window());
-        PushLayer(new ImGuiLayer(win));
+        PushLayer(new ImGuiCoreLayer(win));  // <— en Hub también, pero sin dock
 
         // ApiClient (HTTPS con tu backend en 7223)
         auto client = std::make_shared<ApiClient>("https://localhost:7223");
@@ -105,6 +106,7 @@ public:
         }
 
         // Importante: arrancamos con el Launcher (no montes Viewport/Inspector/Chat acá)
+        gp::Application::Get().SetMode(gp::Application::Mode::Hub);
         PushLayer(new LauncherLayer());
     }
 };

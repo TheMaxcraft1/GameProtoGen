@@ -1,25 +1,26 @@
-#include "ImGuiLayer.h"
-#include "Core/SFMLWindow.h"
-#include "EditorFonts.h"
-#include "ECS/Components.h"
-#include "ECS/SceneSerializer.h"
+#include "EditorDockLayer.h"
+
 #include "Runtime/SceneContext.h"
 #include "Editor/Panels/ViewportPanel.h"
-
-#include <imgui.h>
-#include <imgui-SFML.h>
-#include <imgui_internal.h>
-#include <filesystem>
-#include <Systems/Renderer2D.h>
+#include "Editor/Panels/InspectorPanel.h"
+#include "Editor/Panels/ChatPanel.h"
+#include "ECS/SceneSerializer.h"
+#include "ECS/Components.h"
+#include "Systems/Renderer2D.h"
 #include "Auth/OidcClient.h"
 #include "Net/ApiClient.h"
 #include "Auth/TokenManager.h"
 
+#include <imgui.h>
+#include <imgui_internal.h>
+#include <SFML/Graphics/Color.hpp>
+#include <filesystem>
+#include <sstream>
+#include <iomanip>
 
-// Helpers Files/Proyecto
+// ======================== Helpers (copiados de tu ImGuiLayer.cpp) ========================
 namespace {
     const char* kSavesDir = "Saves";
-    const char* kProjectFile = "Saves/project.json"; // si lo usás en otro lado
 
     static void EnsureSavesDir() {
         std::filesystem::path p(kSavesDir);
@@ -36,13 +37,11 @@ namespace {
             ViewportPanel::AppendLog("[AUTH] ApiClient no inicializado");
             return;
         }
-
-        // Config de tu Azure External ID (B2C)
         OidcConfig cfg;
         cfg.client_id = "2041dbc5-c266-43aa-af66-765b1440f34a";
         cfg.authorize_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/authorize";
         cfg.token_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/token";
-        cfg.scopes = { "openid", "profile", "offline_access", "api://gameprotogen/access_as_user"};
+        cfg.scopes = { "openid","profile","offline_access","api://gameprotogen/access_as_user" };
 
         OidcClient oidc(cfg);
         std::string err;
@@ -51,17 +50,13 @@ namespace {
             ViewportPanel::AppendLog(std::string("[AUTH] Error: ") + err);
             return;
         }
-
-        // Crear/actualizar TokenManager en el contexto
         if (!ctx.tokenManager) ctx.tokenManager = std::make_shared<TokenManager>(cfg);
         ctx.tokenManager->OnInteractiveLogin(*tokens);
 
-        // Conectar ApiClient con los tokens + refresher
         ctx.apiClient->SetAccessToken(tokens->access_token);
         ctx.apiClient->SetTokenRefresher([mgr = ctx.tokenManager]() -> std::optional<std::string> {
             return mgr->Refresh();
             });
-        // (Opcional) preflight proactivo antes de cada request
         ctx.apiClient->SetPreflight([mgr = ctx.tokenManager]() { (void)mgr->EnsureFresh(); });
 
         ViewportPanel::AppendLog("[AUTH] Login OK. access_token seteado en ApiClient.");
@@ -69,13 +64,11 @@ namespace {
             ViewportPanel::AppendLog("[AUTH] refresh_token presente (persistido en Saves/tokens.json).");
     }
 
-    // Fallback post-load por si abrís un JSON viejo sin física/controlador
     static void FixSceneAfterLoad() {
         auto& ctx = SceneContext::Get();
         if (!ctx.scene) return;
         auto& sc = *ctx.scene;
 
-        // Suelo estático
         bool hasStaticCollider = false;
         for (auto& [id, _] : sc.colliders) {
             if (!sc.physics.contains(id)) { hasStaticCollider = true; break; }
@@ -87,7 +80,6 @@ namespace {
             sc.colliders[ground.id] = Collider{ {800.f, 80.f}, {0.f,0.f} };
         }
 
-        // Jugador
         EntityID playerId = 0;
         if (!sc.playerControllers.empty())
             playerId = sc.playerControllers.begin()->first;
@@ -107,26 +99,20 @@ namespace {
             sc.playerControllers[chosen.id] = PlayerController{ 500.f, 900.f };
             playerId = chosen.id;
         }
-
         ctx.selected = Entity{ playerId };
     }
 
     static void DoSave() {
         using namespace std::chrono;
-
         EnsureSavesDir();
         auto& ctx = SceneContext::Get();
         if (!ctx.scene) {
             ViewportPanel::AppendLog("[SAVE] ERROR  escena nula");
             return;
         }
-
-        // Guardar SIEMPRE dentro del directorio de saves
         auto path = std::filesystem::path(kSavesDir) / "scene.json";
-
         bool ok = SceneSerializer::Save(*ctx.scene, path.string());
 
-        // --- Log a la consola ---
         auto now = system_clock::now();
         std::time_t t = system_clock::to_time_t(now);
         std::tm tm{};
@@ -144,15 +130,12 @@ namespace {
 
     static void DoLoad() {
         using namespace std::chrono;
-
         auto& ctx = SceneContext::Get();
         if (!ctx.scene) {
             ViewportPanel::AppendLog("[LOAD] ERROR  escena nula");
             return;
         }
-
         auto path = std::filesystem::path(kSavesDir) / "scene.json";
-
         bool ok = SceneSerializer::Load(*ctx.scene, path.string());
         FixSceneAfterLoad();
         Renderer2D::ClearTextureCache();
@@ -172,7 +155,6 @@ namespace {
         ViewportPanel::AppendLog(oss.str());
     }
 
-    // ----- Spawners ----------------------------------------------------
     static Entity SpawnBox(Scene& scene,
         const sf::Vector2f& pos,
         const sf::Vector2f& size,
@@ -195,78 +177,39 @@ namespace {
         return e;
     }
 
-    // ¿Es Player?
     static bool IsPlayer(const Scene& scene, Entity e) {
         return e && scene.playerControllers.contains(e.id);
     }
 
-    // ----- Duplicar entidad (bloquea Player) ---------------------------
     static Entity DuplicateEntity(Scene& scene, Entity src, const sf::Vector2f& offset = { 16.f, 16.f }) {
         if (!src) return {};
-        if (IsPlayer(scene, src)) return {}; // ← no duplicar Player
-
+        if (IsPlayer(scene, src)) return {};
         Entity dst = scene.CreateEntity();
 
-        // Transform
         if (auto it = scene.transforms.find(src.id); it != scene.transforms.end()) {
             Transform t = it->second;
-            t.position += offset; // que no quede exactamente encima
+            t.position += offset;
             scene.transforms[dst.id] = t;
         }
-        // Sprite
         if (auto it = scene.sprites.find(src.id); it != scene.sprites.end()) {
             scene.sprites[dst.id] = it->second;
         }
-        // Collider
         if (auto it = scene.colliders.find(src.id); it != scene.colliders.end()) {
             scene.colliders[dst.id] = it->second;
         }
-        // Physics2D (velocidad reseteada)
         if (auto it = scene.physics.find(src.id); it != scene.physics.end()) {
             Physics2D p = it->second;
             p.velocity = { 0.f, 0.f };
             p.onGround = false;
             scene.physics[dst.id] = p;
         }
-        // PlayerController NO se copia (si existiera, ya bloqueamos arriba)
-
         return dst;
     }
 } // namespace
+// ====================== Fin Helpers ======================
 
-ImGuiLayer::ImGuiLayer(gp::SFMLWindow& window) : m_Window(window) {}
-
-void ImGuiLayer::OnAttach() {
-    auto& win = m_Window.Native();
-    ImGui::SFML::Init(win);
-
-    m_Window.SetRawEventCallback([this](const void* e) {
-        const sf::Event& ev = *static_cast<const sf::Event*>(e);
-        ImGui::SFML::ProcessEvent(m_Window.Native(), ev);
-        });
-
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-
-    const ImWchar* ranges = io.Fonts->GetGlyphRangesDefault();
-
-    EditorFonts::Regular = io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-Regular.ttf", 20.0f, nullptr, ranges);
-    EditorFonts::H2 = io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-Bold.ttf", 22.0f, nullptr, ranges);
-    EditorFonts::H1 = io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-Bold.ttf", 26.0f, nullptr, ranges);
-
-    io.FontDefault = EditorFonts::Regular;
-    ImGui::SFML::UpdateFontTexture();
-
-    ImGui::StyleColorsLight();
-}
-
-void ImGuiLayer::OnDetach() { ImGui::SFML::Shutdown(); }
-
-void ImGuiLayer::OnUpdate(const gp::Timestep&) {
-    ImGui::SFML::Update(m_Window.Native(), m_Clock.restart());
-}
-
-void ImGuiLayer::OnGuiRender() {
+void EditorDockLayer::OnGuiRender() {
+    // Host que ocupa toda la viewport con menú y dockspace
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->WorkPos);
     ImGui::SetNextWindowSize(vp->WorkSize);
@@ -301,7 +244,6 @@ void ImGuiLayer::OnGuiRender() {
             ImGui::EndMenu();
         }
 
-        // Menú GameObjects
         if (ImGui::BeginMenu("GameObjects", !playing)) {
             if (ImGui::MenuItem("Crear cuadrado", "Ctrl+N")) {
                 auto& ctx = SceneContext::Get();
@@ -319,8 +261,6 @@ void ImGuiLayer::OnGuiRender() {
                     ctx.selected = e;
                 }
             }
-
-            // Duplicar seleccionado (bloquea Player)
             {
                 auto& ctx = SceneContext::Get();
                 const bool canDup = (ctx.scene && ctx.selected && !IsPlayer(*ctx.scene, ctx.selected));
@@ -331,13 +271,12 @@ void ImGuiLayer::OnGuiRender() {
                 }
                 ImGui::EndDisabled();
             }
-
             ImGui::EndMenu();
         }
-
         ImGui::EndMenuBar();
     }
 
+    // ── Popup de “Guardar antes de salir” ──────────────────────────────────
     if (gp::Application::Get().WantsClose()) {
         ImGui::OpenPopup("Guardar antes de salir");
     }
@@ -362,13 +301,12 @@ void ImGuiLayer::OnGuiRender() {
         ImGui::EndPopup();
     }
 
-    // Atajos teclado globales (en pausa)
+    // ── Atajos de teclado (solo si no está jugando) ────────────────────────
     ImGuiIO& io = ImGui::GetIO();
     if (!playing) {
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) DoSave();
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false)) DoLoad();
 
-        // Crear nuevo cuadrado (en centro de cámara)
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_N, false)) {
             auto& ctx = SceneContext::Get();
             if (ctx.scene) {
@@ -376,8 +314,6 @@ void ImGuiLayer::OnGuiRender() {
                 ctx.selected = e;
             }
         }
-
-        // Duplicar seleccionado (Ctrl + D) — bloquea Player
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D, false)) {
             auto& ctx = SceneContext::Get();
             if (ctx.scene && ctx.selected && !IsPlayer(*ctx.scene, ctx.selected)) {
@@ -385,8 +321,6 @@ void ImGuiLayer::OnGuiRender() {
                 if (newE) ctx.selected = newE;
             }
         }
-
-        // Eliminar seleccionado (Supr) — bloquea Player
         if (ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {
             auto& ctx = SceneContext::Get();
             if (ctx.scene && ctx.selected && !IsPlayer(*ctx.scene, ctx.selected)) {
@@ -396,6 +330,7 @@ void ImGuiLayer::OnGuiRender() {
         }
     }
 
+    // ── DockSpace + layout inicial ─────────────────────────────────────────
     ImGuiID dockspace_id = ImGui::GetID("MainDockSpace");
     ImGui::DockSpace(dockspace_id, ImVec2(0, 0), 0);
 
@@ -405,13 +340,16 @@ void ImGuiLayer::OnGuiRender() {
         ImGui::DockBuilderRemoveNode(dockspace_id);
         ImGui::DockBuilderAddNode(dockspace_id, 0);
         ImGui::DockBuilderSetNodeSize(dockspace_id, io2.DisplaySize);
+
         ImGuiID dock_main_id = dockspace_id;
         ImGuiID dock_right_id = ImGui::DockBuilderSplitNode(
             dock_main_id, ImGuiDir_Right, 0.30f, nullptr, &dock_main_id);
+
         ImGui::DockBuilderDockWindow("Inspector", dock_right_id);
         ImGui::DockBuilderDockWindow("Chat", dock_right_id);
         ImGui::DockBuilderDockWindow("Viewport", dock_main_id);
         ImGui::DockBuilderFinish(dockspace_id);
     }
-    ImGui::End();
+
+    ImGui::End(); // ###MainDockHost
 }

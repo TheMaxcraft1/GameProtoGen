@@ -9,6 +9,7 @@
 #include "Auth/OidcClient.h"
 #include "Auth/TokenManager.h"
 #include "Net/ApiClient.h"
+#include "Editor/EditorDockLayer.h"
 
 #include <imgui.h>
 #include <filesystem>
@@ -126,7 +127,9 @@ void LauncherLayer::EnterEditor() {
         SeedNewScene();
     }
 
+    app.SetMode(gp::Application::Mode::Editor);
     // montar editor
+    app.PushLayer(new EditorDockLayer());
     app.PushLayer(new ViewportPanel());
     app.PushLayer(new InspectorPanel());
     app.PushLayer(new ChatPanel(ctx.apiClient));
@@ -138,16 +141,28 @@ void LauncherLayer::EnterEditor() {
 void LauncherLayer::OnGuiRender() {
     ImGui::Begin("Launcher", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse);
 
+    // --- Sesión ---
+    ImGui::TextUnformatted("Sesión:");
     if (!m_loggedIn) {
         if (ImGui::Button("Iniciar sesión")) {
             DoLoginInteractive();
         }
-        ImGui::End();
-        return;
+        ImGui::SameLine();
+        ImGui::TextDisabled("(necesaria para usar el editor y el chat)");
+    }
+    else {
+        ImGui::TextColored(ImVec4(0.1f, 0.5f, 0.1f, 1), "Estás logueado.");
     }
 
-    DrawProjectPicker();
     ImGui::Separator();
+
+    // --- Proyectos ---
+    ImGui::TextUnformatted("Elegí un proyecto local (Saves/*.json):");
+    DrawProjectPicker();
+
+    ImGui::Separator();
+
+    ImGui::BeginDisabled(!m_loggedIn);
     if (ImGui::Button("Nuevo proyecto")) {
         m_selected.clear();
         EnterEditor();
@@ -158,6 +173,11 @@ void LauncherLayer::OnGuiRender() {
         EnterEditor();
     }
     ImGui::EndDisabled();
+    ImGui::EndDisabled();
+
+    if (!m_loggedIn) {
+        ImGui::TextDisabled("Para continuar, iniciá sesión.");
+    }
 
     ImGui::End();
 }

@@ -141,7 +141,7 @@ add_executable(GameProtoGen
 
     # Editor
     Editor/EditorApp.cpp
-    Editor/ImGuiLayer.cpp
+    
     Editor/Panels/ViewportPanel.cpp
     Editor/Panels/InspectorPanel.cpp
     Editor/Panels/ChatPanel.cpp
@@ -159,7 +159,7 @@ add_executable(GameProtoGen
 
     # ImGui extra
     ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
- "Auth/TokenManager.h" "Editor/LauncherLayer.h" "Editor/LauncherLayer.cpp")
+ "Auth/TokenManager.h" "Editor/LauncherLayer.h" "Editor/LauncherLayer.cpp" "Editor/ImGuiCoreLayer.h" "Editor/ImGuiCoreLayer.cpp" "Editor/EditorDockLayer.h" "Editor/EditorDockLayer.cpp")
 
 target_sources(GameProtoGen PRIVATE
     ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp

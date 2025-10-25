@@ -3,7 +3,7 @@
 #include <imgui-SFML.h>
 #include "SFMLWindow.h"
 #include <chrono>
-#include <algorithm>   // <-- asegúrate de tener esto
+#include <algorithm>
 
 namespace gp {
 
