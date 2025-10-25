@@ -13,6 +13,7 @@
 
 #include <imgui.h>
 #include <filesystem>
+#include "Core/SFMLWindow.h"
 
 using std::filesystem::exists;
 using std::filesystem::directory_iterator;
@@ -128,6 +129,9 @@ void LauncherLayer::EnterEditor() {
     }
 
     app.SetMode(gp::Application::Mode::Editor);
+    auto& win = static_cast<gp::SFMLWindow&>(app.Window());
+    win.SetMaximized(true);
+
     // montar editor
     app.PushLayer(new EditorDockLayer());
     app.PushLayer(new ViewportPanel());
@@ -139,7 +143,36 @@ void LauncherLayer::EnterEditor() {
 }
 
 void LauncherLayer::OnGuiRender() {
-    ImGui::Begin("Launcher", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse);
+    // Ventana raíz a pantalla completa (dentro del window actual)
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(vp->Pos);
+    ImGui::SetNextWindowSize(vp->Size);
+    ImGui::SetNextWindowViewport(vp->ID);
+
+    ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoDecoration |
+        ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoBringToFrontOnFocus |
+        ImGuiWindowFlags_NoNavFocus;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24, 24)); // margen amplio
+    ImGui::Begin("##HubRoot", nullptr, flags);
+    ImGui::PopStyleVar(3);
+
+    // Centrar un panel de ancho fijo
+    const float contentW = 720.f; // el “panel” del hub
+    const float availW = ImGui::GetContentRegionAvail().x;
+    const float x = (availW > contentW) ? (availW - contentW) * 0.5f : 0.f;
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + x);
+
+    ImGui::BeginChild("##HubContent", ImVec2(contentW, 0), true, ImGuiWindowFlags_NoScrollbar);
+
+    // --- Cabecera ---
+    ImGui::TextUnformatted("GameProtoGen — Hub");
+    ImGui::Separator();
 
     // --- Sesión ---
     ImGui::TextUnformatted("Sesión:");
@@ -151,17 +184,20 @@ void LauncherLayer::OnGuiRender() {
         ImGui::TextDisabled("(necesaria para usar el editor y el chat)");
     }
     else {
-        ImGui::TextColored(ImVec4(0.1f, 0.5f, 0.1f, 1), "Estás logueado.");
+        ImGui::TextColored(ImVec4(0.1f, 0.6f, 0.1f, 1.f), "Estás logueado.");
     }
 
+    ImGui::Dummy(ImVec2(0, 8));
     ImGui::Separator();
 
     // --- Proyectos ---
     ImGui::TextUnformatted("Elegí un proyecto local (Saves/*.json):");
     DrawProjectPicker();
 
+    ImGui::Dummy(ImVec2(0, 8));
     ImGui::Separator();
 
+    // Acciones
     ImGui::BeginDisabled(!m_loggedIn);
     if (ImGui::Button("Nuevo proyecto")) {
         m_selected.clear();
@@ -176,8 +212,10 @@ void LauncherLayer::OnGuiRender() {
     ImGui::EndDisabled();
 
     if (!m_loggedIn) {
+        ImGui::Dummy(ImVec2(0, 6));
         ImGui::TextDisabled("Para continuar, iniciá sesión.");
     }
 
-    ImGui::End();
+    ImGui::EndChild(); // ##HubContent
+    ImGui::End();      // ##HubRoot
 }

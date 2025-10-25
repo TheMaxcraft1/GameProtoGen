@@ -107,6 +107,8 @@ public:
         // Importante: arrancamos con el Launcher (no montes Viewport/Inspector/Chat acá)
         gp::Application::Get().SetMode(gp::Application::Mode::Hub);
         PushLayer(new LauncherLayer());
+        win.SetMaximized(false);
+        win.SetWindowedSize(1024, 640); // centrado por defecto
     }
 };
 
