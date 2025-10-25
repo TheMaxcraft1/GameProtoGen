@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <Systems/Renderer2D.h>
 #include <Auth/TokenManager.h>
+#include "Editor/LauncherLayer.h"
 
 // Helper: asegurar que hay un jugador “jugable”
 static void EnsurePlayable(Scene& scene, Entity& outSelected) {
@@ -74,100 +75,37 @@ public:
     void Setup() {
         auto& win = static_cast<gp::SFMLWindow&>(Window());
         PushLayer(new ImGuiLayer(win));
-        PushLayer(new ViewportPanel());
-        PushLayer(new InspectorPanel());
-        //auto client = std::make_shared<ApiClient>("https://ca-game-protogen.purplehill-2f1636cc.brazilsouth.azurecontainerapps.io");
-        //auto client = std::make_shared<ApiClient>("http://localhost:5097");
+
+        // ApiClient (HTTPS con tu backend en 7223)
         auto client = std::make_shared<ApiClient>("https://localhost:7223");
-        client->SetVerifySsl(true); 
-		client->UseHttps(true);
+        client->SetVerifySsl(true);
+        client->UseHttps(true);
         client->SetTimeouts(10, 180, 30);
-        PushLayer(new ChatPanel(client));
 
-        // Semilla / Carga de proyecto
         auto& ctx = SceneContext::Get();
-        ctx.scene = std::make_shared<Scene>();
-		ctx.apiClient = client;
+        ctx.apiClient = client;
+        ctx.scene.reset(); // la escena se decide en el launcher
 
+        // TokenManager precargado (si ya hay tokens guardados)
         OidcConfig cfg;
         cfg.client_id = "2041dbc5-c266-43aa-af66-765b1440f34a";
         cfg.authorize_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/authorize";
         cfg.token_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/token";
-        cfg.scopes = { "openid", "profile", "offline_access", "api://gameprotogen/access_as_user"};
+        cfg.scopes = { "openid","profile","offline_access","api://gameprotogen/access_as_user" };
 
-        // ✅ construir el TokenManager con cfg
         ctx.tokenManager = std::make_shared<TokenManager>(cfg);
         if (ctx.tokenManager->Load()) {
-            // Preflight y refresher
             ctx.apiClient->SetTokenRefresher([mgr = ctx.tokenManager]() -> std::optional<std::string> {
                 return mgr->Refresh();
                 });
             ctx.apiClient->SetPreflight([mgr = ctx.tokenManager]() { (void)mgr->EnsureFresh(); });
-
-            // Si el access sigue válido, lo ponemos; si no, EnsureFresh intentará renovarlo
             if (!ctx.tokenManager->AccessToken().empty())
                 ctx.apiClient->SetAccessToken(ctx.tokenManager->AccessToken());
-            ctx.tokenManager->EnsureFresh(); // opcional, forzá refresh si hace falta
+            ctx.tokenManager->EnsureFresh();
         }
 
-        bool loaded = false;
-        const char* kProjPath = "Saves/scene.json";;
-        if (std::filesystem::exists(kProjPath)) {
-            loaded = SceneSerializer::Load(*ctx.scene, kProjPath);
-            Renderer2D::ClearTextureCache();
-        }
-
-        if (!loaded) {
-            // Escena base si no hay archivo
-            auto e = ctx.scene->CreateEntity();
-            ctx.scene->transforms[e.id] = Transform{ {800.f, 450.f}, {1.f,1.f}, 0.f };
-            ctx.scene->sprites[e.id] = Sprite{ {80.f,120.f}, sf::Color(0,255,0,255) };
-            ctx.scene->colliders[e.id] = Collider{ {40.f,60.f}, {0.f,0.f} };
-            ctx.scene->physics[e.id] = Physics2D{};
-            ctx.scene->playerControllers[e.id] = PlayerController{ 500.f, 900.f };
-            ctx.selected = e;
-
-            // Plataforma “suelo”
-            auto ground = ctx.scene->CreateEntity();
-            ctx.scene->transforms[ground.id] = Transform{ {800.f, 820.f}, {1.f,1.f}, 0.f };
-            ctx.scene->sprites[ground.id] = Sprite{ {1600.f, 160.f}, sf::Color(60,60,70,255) };
-            ctx.scene->colliders[ground.id] = Collider{ {800.f, 80.f}, {0.f,0.f} };
-        }
-        else {
-            // Auto-curación: asegurar jugador y suelo aunque el JSON sea viejo
-            EnsureGround(*ctx.scene);
-            EnsurePlayable(*ctx.scene, ctx.selected);
-        }
-
-        {
-            auto& ctx = SceneContext::Get();
-            if (ctx.scene) {
-                // 1) Asegurar que exista la entidad 3 (si no, crearla con Transform)
-                bool exists = false;
-                for (auto& e : ctx.scene->Entities()) {
-                    if (e.id == 3) { exists = true; break; }
-                }
-                if (!exists) {
-                    Entity e = ctx.scene->CreateEntityWithId(3);
-                    // Un Transform es necesario para que ScriptSystem considere esta entidad
-                    ctx.scene->transforms[e.id] = Transform{ {800.f, 450.f}, {1.f,1.f}, 0.f };
-                    // (Opcional) algo visible:
-                    ctx.scene->sprites[e.id] = Sprite{ {80.f,80.f}, sf::Color(255,128,0,255) };
-                    // (Opcional) collider si querés que colisione:
-                    ctx.scene->colliders[e.id] = Collider{ {40.f,40.f}, {0.f,0.f} };
-                }
-
-                // 2) Adjuntar el script
-                {
-                    EntityID target = 3;
-                    auto& sc = ctx.scene->scripts[target];
-                    sc.path = "Assets/Scripts/mover.lua";
-                    sc.inlineCode.clear();
-                    sc.loaded = false; // forzar on_spawn al entrar en Play
-                }
-            }
-        }
-
+        // Importante: arrancamos con el Launcher (no montes Viewport/Inspector/Chat acá)
+        PushLayer(new LauncherLayer());
     }
 };
 

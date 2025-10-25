@@ -55,6 +55,7 @@ namespace gp {
         virtual ~Application();
         void Run();
         void PushLayer(Layer* layer);
+        void PopLayer(Layer* layer);
         IWindow& Window() { return *m_Window; }
 
         // NUEVO: singleton simple para que las layers puedan pedir salir
@@ -72,6 +73,8 @@ namespace gp {
         IWindow* m_Window = nullptr;
         std::vector<Layer*> m_Layers;
         void OnEvent(const Event& e);
+        void FlushPending();
+        std::vector<Layer*> m_PendingRemove;
 
         static Application* s_Instance; // NUEVO
     };
