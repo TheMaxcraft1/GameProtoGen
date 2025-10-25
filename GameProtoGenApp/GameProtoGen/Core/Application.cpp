@@ -30,8 +30,12 @@ namespace gp {
         while (m_Running) {
             m_Window->PollEvents();
 
-            // <-- NUEVO: procesar remociones pendientes ANTES de update/draw
             FlushPending();
+
+            if (m_WantsClose && GetMode() == Mode::Hub) {
+                QuitNow();
+                break;
+            }
 
             auto now = clock::now();
             float dt = std::chrono::duration<float>(now - last).count();
