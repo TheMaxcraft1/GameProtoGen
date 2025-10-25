@@ -8,7 +8,6 @@
 #include "ECS/Components.h"
 #include "ECS/SceneSerializer.h"
 #include "Net/ApiClient.h"
-#include "ImGuiLayer.h"
 #include <filesystem>
 #include <Systems/Renderer2D.h>
 #include <Auth/TokenManager.h>
