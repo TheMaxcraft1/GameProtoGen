@@ -77,8 +77,10 @@ public:
         PushLayer(new ViewportPanel());
         PushLayer(new InspectorPanel());
         //auto client = std::make_shared<ApiClient>("https://ca-game-protogen.purplehill-2f1636cc.brazilsouth.azurecontainerapps.io");
-        auto client = std::make_shared<ApiClient>("http://localhost:5097");
-        //client->SetVerifySsl(true); 
+        //auto client = std::make_shared<ApiClient>("http://localhost:5097");
+        auto client = std::make_shared<ApiClient>("https://localhost:7223");
+        client->SetVerifySsl(true); 
+		client->UseHttps(true);
         client->SetTimeouts(10, 180, 30);
         PushLayer(new ChatPanel(client));
 
@@ -91,7 +93,7 @@ public:
         cfg.client_id = "2041dbc5-c266-43aa-af66-765b1440f34a";
         cfg.authorize_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/authorize";
         cfg.token_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/token";
-        cfg.scopes = { "openid", "profile", "offline_access" };
+        cfg.scopes = { "openid", "profile", "offline_access", "api://gameprotogen/access_as_user"};
 
         // ✅ construir el TokenManager con cfg
         ctx.tokenManager = std::make_shared<TokenManager>(cfg);

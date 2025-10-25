@@ -42,7 +42,7 @@ namespace {
         cfg.client_id = "2041dbc5-c266-43aa-af66-765b1440f34a";
         cfg.authorize_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/authorize";
         cfg.token_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/token";
-        cfg.scopes = { "openid", "profile", "offline_access" };
+        cfg.scopes = { "openid", "profile", "offline_access", "api://gameprotogen/access_as_user"};
 
         OidcClient oidc(cfg);
         std::string err;

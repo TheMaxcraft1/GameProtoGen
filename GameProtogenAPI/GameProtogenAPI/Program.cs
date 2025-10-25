@@ -5,10 +5,34 @@ using GameProtogenAPI.AI.Orchestration;
 using GameProtogenAPI.AI.Orchestration.Contracts;
 using GameProtogenAPI.Services;
 using GameProtogenAPI.Services.Contracts;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.SemanticKernel;
 using OpenAI.Images;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var audience =
+    builder.Configuration["Auth:Audience"] ??
+    builder.Configuration["AUTH_AUDIENCE"] ??
+    Environment.GetEnvironmentVariable("AUTH_AUDIENCE");
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/v2.0";
+        options.Audience  = audience;
+        // Opcional: validaciones extra
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/v2.0",
+            ValidateAudience = true,
+            ValidAudience = audience,
+            ValidateLifetime = true
+        };
+    });
 
 builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -69,9 +93,8 @@ if (app.Environment.IsDevelopment())
 
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }));
 
-//app.UseHttpsRedirection();
-
-//app.UseAuthorization();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 

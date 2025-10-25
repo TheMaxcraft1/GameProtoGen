@@ -1,6 +1,7 @@
 ﻿using GameProtogenAPI.AI.Orchestration.Contracts;
 using GameProtogenAPI.Services.Contracts;
 using GameProtogenAPI.Validators;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Text;
 using System.Text.Json;
@@ -10,6 +11,7 @@ namespace GameProtogenAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class ChatController : ControllerBase
     {
         private readonly ISkSceneEditOrchestrator _orchestrator;
