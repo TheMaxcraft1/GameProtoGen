@@ -29,12 +29,14 @@ void ViewportPanel::OnAttach() {
     m_IconSelectOK = m_IcoSelect.loadFromFile("Assets/Icons/select.png");
     m_IconPanOK = m_IcoPan.loadFromFile("Assets/Icons/pan.png");
     m_IconRotateOK = m_IcoRotate.loadFromFile("Assets/Icons/rotate.png");
+    m_IconScaleOK = m_IcoScale.loadFromFile("Assets/Icons/scale.png");
 
     m_IcoPlay.setSmooth(true);
     m_IcoPause.setSmooth(true);
     m_IcoSelect.setSmooth(true);
     m_IcoPan.setSmooth(true);
     m_IcoRotate.setSmooth(true);
+	m_IcoScale.setSmooth(true);
 }
 
 void ViewportPanel::EnsureRT() {
@@ -159,11 +161,19 @@ void ViewportPanel::OnGuiRender() {
             ImGui::PopStyleColor();
             if (pressed) m_Tool = Tool::Rotate;
         }
+        { // Scale
+            const bool scaleActive = (m_Tool == Tool::Scale);
+            ImGui::PushStyleColor(ImGuiCol_Button, scaleActive ? on : off);
+            bool pressed = IconButtonScale(scaleActive);
+            ImGui::PopStyleColor();
+            if (pressed) m_Tool = Tool::Scale;
+        }
 
         // Hotkeys (sólo en pausa)
         if (ImGui::IsKeyPressed(ImGuiKey_1)) m_Tool = Tool::Select;
         if (ImGui::IsKeyPressed(ImGuiKey_2)) m_Tool = Tool::Pan;
         if (ImGui::IsKeyPressed(ImGuiKey_3)) m_Tool = Tool::Rotate;
+		if (ImGui::IsKeyPressed(ImGuiKey_4)) m_Tool = Tool::Scale;
     }
     ImGui::EndDisabled();
 
@@ -361,6 +371,120 @@ void ViewportPanel::OnGuiRender() {
                         " -> " + std::to_string((int)std::round(finalDeg)) + "°");
                 }
                 m_Rotating = false;
+                m_DragEntity = 0;
+            }
+        }
+
+        if (!m_Playing && m_Tool == Tool::Scale && !m_Panning) {
+            const bool hovered = ImGui::IsItemHovered();
+
+            if (hovered) {
+                ImGui::SetMouseCursor(m_Scaling ? ImGuiMouseCursor_ResizeAll : ImGuiMouseCursor_Hand);
+
+                if (auto worldOpt = ScreenToWorld(io.MousePos, imgMin, imgMax)) {
+                    sf::Vector2f world = *worldOpt;
+                    auto& cx = SceneContext::Get();
+
+                    // Iniciar: pick & start
+                    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                        EntityID hit = PickEntityAt(world);
+                        if (cx.scene && hit) {
+                            if (!cx.selected || cx.selected.id != hit) {
+                                cx.selected = Entity{ hit };
+                                AppendLog("Seleccionado entity id=" + std::to_string(hit));
+                            }
+                            if (cx.scene->transforms.contains(hit)) {
+                                const auto& t = cx.scene->transforms[hit];
+                                sf::Vector2f center = t.position;
+                                if (auto itC = cx.scene->colliders.find(hit); itC != cx.scene->colliders.end())
+                                    center += itC->second.offset;
+
+                                m_Scaling = true;
+                                m_Dragging = false;
+                                m_DragEntity = hit;
+
+                                m_ScaleStartMouse = world - center;
+                                m_ScaleStartLen = std::max(1e-3f, std::sqrt(m_ScaleStartMouse.x * m_ScaleStartMouse.x + m_ScaleStartMouse.y * m_ScaleStartMouse.y));
+                                m_ScaleStartEntityScale = t.scale;
+
+                                AppendLog("Escalar: inicio id=" + std::to_string(hit));
+                            }
+                        }
+                        // clic en vacío: no deselecciona y no inicia
+                    }
+
+                    // Actualizar
+                    if (m_Scaling && ImGui::IsMouseDown(ImGuiMouseButton_Left) && cx.scene && cx.selected) {
+                        EntityID id = cx.selected.id;
+                        if (cx.scene->transforms.contains(id)) {
+                            auto& t = cx.scene->transforms[id];
+                            sf::Vector2f center = t.position;
+                            if (auto itC = cx.scene->colliders.find(id); itC != cx.scene->colliders.end())
+                                center += itC->second.offset;
+
+                            sf::Vector2f cur = world - center;
+                            float curLen = std::max(1e-3f, std::sqrt(cur.x * cur.x + cur.y * cur.y));
+
+                            // Factores por-eje
+                            auto safe_ratio = [](float num, float den) {
+                                return (std::fabs(den) < 1e-3f) ? 1.f : (num / den);
+                                };
+                            // Ratios crudos
+                            float rx = safe_ratio(cur.x, m_ScaleStartMouse.x);
+                            float ry = safe_ratio(cur.y, m_ScaleStartMouse.y);
+                            float ru = curLen / m_ScaleStartLen;
+
+                            // Suavizado: 1 + s*(r - 1)
+                            auto soften = [&](float r) {
+                                return 1.f + m_ScaleSensitivity * (r - 1.f);
+                                };
+
+                            // Umbral para evitar explosión en ejes con arranque ~0
+                            const float kAxisEps = 4.f;
+
+                            // Ratios suavizados por eje
+                            float fx = (std::fabs(m_ScaleStartMouse.x) < kAxisEps) ? soften(ru) : soften(rx);
+                            float fy = (std::fabs(m_ScaleStartMouse.y) < kAxisEps) ? soften(ru) : soften(ry);
+
+                            // Uniforme con Shift (usa también suavizado)
+                            if (io.KeyShift) {
+                                float fu = soften(ru);
+                                fx = fy = fu;
+                            }
+
+                            sf::Vector2f newScale{
+                                m_ScaleStartEntityScale.x * fx,
+                                m_ScaleStartEntityScale.y * fy
+                            };
+
+                            // Snap con Ctrl (paso 0.1)
+                            if (io.KeyCtrl) {
+                                auto snap = [](float v, float step) {
+                                    return std::round(v / step) * step;
+                                    };
+                                newScale.x = snap(newScale.x, 0.1f);
+                                newScale.y = snap(newScale.y, 0.1f);
+                            }
+
+                            // Clamp mínimo para evitar colapsos
+                            newScale.x = std::clamp(newScale.x, -1000.f, -0.05f) < 0.f ? newScale.x : std::max(newScale.x, 0.05f);
+                            newScale.y = std::clamp(newScale.y, -1000.f, -0.05f) < 0.f ? newScale.y : std::max(newScale.y, 0.05f);
+
+                            t.scale = newScale;
+                        }
+                    }
+                }
+            }
+
+            // Finalizar
+            if (m_Scaling && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                auto& cx2 = SceneContext::Get();
+                if (cx2.scene && cx2.selected && cx2.scene->transforms.contains(cx2.selected.id)) {
+                    const auto s = cx2.scene->transforms[cx2.selected.id].scale;
+                    AppendLog("Escalar: fin id=" + std::to_string(cx2.selected.id) +
+                        " -> (" + std::to_string(s.x) + ", " + std::to_string(s.y) + ")");
+                }
+                m_Scaling = false;
                 m_DragEntity = 0;
             }
         }
@@ -666,6 +790,18 @@ bool ViewportPanel::IconButtonRotate(bool active) {
         bool pressed = ImGui::Button("Rotate", ImVec2(64, h));
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", "Rotar (3)");
+        return pressed;
+    }
+}
+
+bool ViewportPanel::IconButtonScale(bool active) {
+    const float h = 28.f;
+    if (m_IconScaleOK) {
+        return IconButtonFromTexture("##btn_scale", m_IcoScale, h, "Escalar (4)", active);
+    }
+    else {
+        bool pressed = ImGui::Button("Scale", ImVec2(56, h));
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", "Escalar (4)");
         return pressed;
     }
 }

@@ -31,25 +31,32 @@ private:
     const unsigned m_VirtH = 900;
 
     // Estado editor / cámara / herramientas
-    enum class Tool { Select, Pan, Rotate };
+    enum class Tool { Select, Pan, Rotate, Scale };
     Tool m_Tool = Tool::Select;
 
     bool m_Playing = false;       // arranca en pausa
     bool m_Panning = false;       // pan de cámara en pausa
     bool m_Dragging = false;      // arrastre de entidad en pausa
     bool m_Rotating = false;
+    bool m_Scaling = false;
+
     EntityID m_DragEntity = 0;
     sf::Vector2f m_DragOffset{ 0.f, 0.f };
 
     float m_RotateStartAngle = 0.f;         // ángulo inicial (mouse vs centro)
     float m_RotateStartEntityAngle = 0.f;   // rotación inicial de la entidad
 
+    sf::Vector2f m_ScaleStartMouse{ 0.f, 0.f };
+    sf::Vector2f m_ScaleStartEntityScale{ 1.f, 1.f };
+    float m_ScaleStartLen = 1.f;
+    float m_ScaleSensitivity = 0.5f;
+
     sf::Vector2f m_CamCenter{ 800.f, 450.f };
     float m_Grid = 32.f;          // snap/grilla (sigue activo pero ya no se muestra en UI)
 
     // Iconos toolbar
-    sf::Texture m_IcoPlay, m_IcoPause, m_IcoSelect, m_IcoPan, m_IcoRotate;
-    bool m_IconPlayOK = false, m_IconPauseOK = false, m_IconSelectOK = false, m_IconPanOK = false, m_IconRotateOK = false;
+    sf::Texture m_IcoPlay, m_IcoPause, m_IcoSelect, m_IcoPan, m_IcoRotate, m_IcoScale;
+    bool m_IconPlayOK = false, m_IconPauseOK = false, m_IconSelectOK = false, m_IconPanOK = false, m_IconRotateOK = false, m_IconScaleOK = false;;
 
     void EnsureRT();
 
@@ -66,6 +73,7 @@ private:
     bool IconButtonSelect(bool active);
     bool IconButtonPan(bool active);
     bool IconButtonRotate(bool active);
+    bool IconButtonScale(bool active);
 
     // Consola
     bool m_AutoScroll = true;
