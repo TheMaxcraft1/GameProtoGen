@@ -19,6 +19,7 @@ static inline void ClampDockedMinWidth(float minW) {
     }
 }
 
+
 ViewportPanel::ViewportPanel() {}
 
 void ViewportPanel::OnAttach() {
@@ -27,11 +28,13 @@ void ViewportPanel::OnAttach() {
     m_IconPauseOK = m_IcoPause.loadFromFile("Assets/Icons/pause.png");
     m_IconSelectOK = m_IcoSelect.loadFromFile("Assets/Icons/select.png");
     m_IconPanOK = m_IcoPan.loadFromFile("Assets/Icons/pan.png");
+    m_IconRotateOK = m_IcoRotate.loadFromFile("Assets/Icons/rotate.png");
 
     m_IcoPlay.setSmooth(true);
     m_IcoPause.setSmooth(true);
     m_IcoSelect.setSmooth(true);
     m_IcoPan.setSmooth(true);
+    m_IcoRotate.setSmooth(true);
 }
 
 void ViewportPanel::EnsureRT() {
@@ -76,6 +79,7 @@ void ViewportPanel::OnUpdate(const gp::Timestep& dt) {
         Systems::CollisionSystem::SolveAABB(*ctx.scene);
     }
 }
+
 
 void ViewportPanel::OnGuiRender() {
     auto& ctx = SceneContext::Get();
@@ -146,11 +150,20 @@ void ViewportPanel::OnGuiRender() {
             bool pressed = IconButtonPan(panActive);
             ImGui::PopStyleColor();
             if (pressed) m_Tool = Tool::Pan;
+            ImGui::SameLine();
+        }
+        { // Rotate
+            const bool rotActive = (m_Tool == Tool::Rotate);
+            ImGui::PushStyleColor(ImGuiCol_Button, rotActive ? on : off);
+            bool pressed = IconButtonRotate(rotActive);
+            ImGui::PopStyleColor();
+            if (pressed) m_Tool = Tool::Rotate;
         }
 
         // Hotkeys (sólo en pausa)
         if (ImGui::IsKeyPressed(ImGuiKey_1)) m_Tool = Tool::Select;
         if (ImGui::IsKeyPressed(ImGuiKey_2)) m_Tool = Tool::Pan;
+        if (ImGui::IsKeyPressed(ImGuiKey_3)) m_Tool = Tool::Rotate;
     }
     ImGui::EndDisabled();
 
@@ -265,6 +278,90 @@ void ViewportPanel::OnGuiRender() {
                     sf::Vector2f deltaRT{ io.MouseDelta.x * scaleX, io.MouseDelta.y * scaleY };
                     m_CamCenter -= deltaRT; // arrastrar lienzo
                 }
+            }
+        }
+
+		// ROTAR ENTIDAD SELECCIONADA (sólo en pausa, herramienta Rotate y si NO estamos paneando)
+        if (!m_Playing && m_Tool == Tool::Rotate && !m_Panning) {
+            const bool hovered = ImGui::IsItemHovered();
+
+            if (hovered) {
+                ImGui::SetMouseCursor(m_Rotating ? ImGuiMouseCursor_ResizeNESW : ImGuiMouseCursor_Hand);
+
+                if (auto worldOpt = ScreenToWorld(io.MousePos, imgMin, imgMax)) {
+                    sf::Vector2f world = *worldOpt;
+                    auto& cx = SceneContext::Get();
+
+                    // Al presionar: pick & (si hay hit) seleccionar y arrancar rotación
+                    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                        EntityID hit = PickEntityAt(world);
+                        if (cx.scene && hit) {
+                            // Seleccionar si era otra:
+                            if (!cx.selected || cx.selected.id != hit) {
+                                cx.selected = Entity{ hit };
+                                AppendLog("Seleccionado entity id=" + std::to_string(hit));
+                            }
+
+                            // Iniciar rotación
+                            m_Rotating = true;
+                            m_Dragging = false;        // por las dudas
+                            m_DragEntity = hit;
+
+                            auto& t = cx.scene->transforms[hit];
+                            sf::Vector2f center = t.position;
+                            if (auto itC = cx.scene->colliders.find(hit); itC != cx.scene->colliders.end()) {
+                                center += itC->second.offset;
+                            }
+
+                            auto angleFrom = [&](const sf::Vector2f& p) -> float {
+                                return std::atan2(p.y - center.y, p.x - center.x) * 180.0f / 3.14159265f;
+                                };
+
+                            m_RotateStartAngle = angleFrom(world);
+                            m_RotateStartEntityAngle = t.rotationDeg;
+                            AppendLog("Rotar: inicio id=" + std::to_string(hit));
+                        }
+                        // Si clickeaste vacío: NO des-seleccionar, y no arrancar rotación
+                    }
+
+                    // Mientras se mantiene el botón: actualizar rotación
+                    if (m_Rotating && ImGui::IsMouseDown(ImGuiMouseButton_Left) && cx.scene && cx.selected) {
+                        EntityID id = cx.selected.id;
+                        if (cx.scene->transforms.contains(id)) {
+                            auto& t = cx.scene->transforms[id];
+                            sf::Vector2f center = t.position;
+                            if (auto itC = cx.scene->colliders.find(id); itC != cx.scene->colliders.end()) {
+                                center += itC->second.offset;
+                            }
+
+                            auto angleFrom = [&](const sf::Vector2f& p) -> float {
+                                return std::atan2(p.y - center.y, p.x - center.x) * 180.0f / 3.14159265f;
+                                };
+
+                            float now = angleFrom(world);
+                            float delta = now - m_RotateStartAngle;
+
+                            // Snap con Shift (15°)
+                            if (io.KeyShift) {
+                                const float step = 15.f;
+                                delta = std::round(delta / step) * step;
+                            }
+                            t.rotationDeg = m_RotateStartEntityAngle + delta;
+                        }
+                    }
+                }
+            }
+
+            // Al soltar: terminar rotación (si estaba activa)
+            if (m_Rotating && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                auto& cx2 = SceneContext::Get();
+                if (cx2.scene && cx2.selected && cx2.scene->transforms.contains(cx2.selected.id)) {
+                    float finalDeg = cx2.scene->transforms[cx2.selected.id].rotationDeg;
+                    AppendLog("Rotar: fin id=" + std::to_string(cx2.selected.id) +
+                        " -> " + std::to_string((int)std::round(finalDeg)) + "°");
+                }
+                m_Rotating = false;
+                m_DragEntity = 0;
             }
         }
 
@@ -555,6 +652,20 @@ bool ViewportPanel::IconButtonPan(bool active) {
         bool pressed = ImGui::Button("Pan", ImVec2(44, h));
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", "Arrastrar (2)");
+        return pressed;
+    }
+}
+
+bool ViewportPanel::IconButtonRotate(bool active) {
+    const float h = 28.f;
+    if (m_IconRotateOK) {
+        return IconButtonFromTexture("##btn_rotate", m_IcoRotate, h,
+            "Rotar (3)", active);
+    }
+    else {
+        bool pressed = ImGui::Button("Rotate", ImVec2(64, h));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", "Rotar (3)");
         return pressed;
     }
 }
