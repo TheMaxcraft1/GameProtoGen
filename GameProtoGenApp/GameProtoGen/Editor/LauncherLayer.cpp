@@ -24,8 +24,46 @@ static void EnsureSavesDir() {
     (void)ec;
 }
 
+bool LauncherLayer::TryAutoLogin() {
+    auto& ctx = SceneContext::Get();
+
+    // Asegurar que haya TokenManager (por si alguien llama al Launcher sin pasar por EditorApp::Setup)
+    if (!ctx.tokenManager) {
+        OidcConfig cfg;
+        cfg.client_id = "2041dbc5-c266-43aa-af66-765b1440f34a";
+        cfg.authorize_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/authorize";
+        cfg.token_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/token";
+        cfg.scopes = { "openid","profile","offline_access","api://gameprotogen/access_as_user" };
+        ctx.tokenManager = std::make_shared<TokenManager>(cfg);
+    }
+
+    // 1) Intentar cargar tokens persistidos
+    if (!ctx.tokenManager->Load()) return false;
+
+    // 2) Conectar el refresco/preflight al ApiClient (si existe)
+    if (ctx.apiClient) {
+        ctx.apiClient->SetTokenRefresher([mgr = ctx.tokenManager]() -> std::optional<std::string> {
+            return mgr->Refresh();
+            });
+        ctx.apiClient->SetPreflight([mgr = ctx.tokenManager]() { (void)mgr->EnsureFresh(); });
+    }
+
+    // 3) Asegurar que el access_token esté fresco (puede refrescar usando refresh_token)
+    if (!ctx.tokenManager->EnsureFresh()) return false;
+
+    // 4) Si hay access_token, setearlo en el ApiClient
+    const std::string& at = ctx.tokenManager->AccessToken();
+    if (at.empty()) return false;
+
+    if (ctx.apiClient) {
+        ctx.apiClient->SetAccessToken(at);
+    }
+    return true;
+}
+
 void LauncherLayer::OnAttach() {
     EnsureSavesDir();
+    m_loggedIn = TryAutoLogin();
 }
 
 void LauncherLayer::DoLoginInteractive() {

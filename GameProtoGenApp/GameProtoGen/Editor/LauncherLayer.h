@@ -19,4 +19,5 @@ private:
     void DrawProjectPicker();    // lista Saves/*.json (si existe)
     void SeedNewScene();         // crea una escena mínima
     void EnterEditor();          // monta Viewport/Inspector/Chat y se auto-saca
+    bool TryAutoLogin();
 };
