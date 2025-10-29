@@ -1,8 +1,6 @@
 #include "ViewportPanel.h"
 #include "Runtime/SceneContext.h"
-#include "Systems/Renderer2D.h"
-#include "Systems/PhysicsSystem.h"
-#include "Systems/ScriptSystem.h"
+#include "Runtime/GameRunner.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -74,11 +72,7 @@ void ViewportPanel::OnUpdate(const gp::Timestep& dt) {
     if (!ctx.scene) return;
 
     if (m_Playing) {
-        Systems::ScriptSystem::Update(*ctx.scene, dt.dt);
-        Systems::PlayerControllerSystem::Update(*ctx.scene, dt.dt);
-        Systems::PhysicsSystem::Update(*ctx.scene, dt.dt);
-        Systems::CollisionSystem::SolveGround(*ctx.scene, /*groundY*/ m_VirtH);
-        Systems::CollisionSystem::SolveAABB(*ctx.scene);
+        GameRunner::Step(*ctx.scene, dt.dt);
     }
 }
 
@@ -98,16 +92,12 @@ void ViewportPanel::OnGuiRender() {
         SceneContext::Get().runtime.playing = m_Playing;
         AppendLog(std::string("Runtime: ") + (m_Playing ? "Play" : "Pause"));
 
-        // Solo al pasar de pausa a play:
-        if (!wasPlaying && m_Playing) {
-            Systems::ScriptSystem::ResetVM();   // <- limpia entornos
-            auto& ctx2 = SceneContext::Get();
-            if (ctx2.scene) {
-                for (auto& [id, sc] : ctx2.scene->scripts)
-                    sc.loaded = false;          // <- fuerza on_spawn 1 vez en esta sesión
-            }
+        auto& ctx2 = SceneContext::Get();
+        if (ctx2.scene) {
+            if (!wasPlaying && m_Playing)  GameRunner::EnterPlay(*ctx2.scene);
+            if (wasPlaying && !m_Playing)  GameRunner::ExitPlay(*ctx2.scene);
         }
-        };
+    };
 
     // Hotkey F5
     if (ImGui::IsKeyPressed(ImGuiKey_F5)) TogglePlay();
@@ -226,7 +216,7 @@ void ViewportPanel::OnGuiRender() {
             if (!m_Playing) DrawGrid(*m_RT);
 
             // Objetos
-            Renderer2D::Draw(*ctx.scene, *m_RT);
+            GameRunner::Render(*ctx.scene, *m_RT, m_CamCenter, { m_VirtW, m_VirtH });
 
             // Gizmo de selección SOLO en pausa
             if (!m_Playing) DrawSelectionGizmo(*m_RT);

@@ -145,6 +145,12 @@ add_executable(GameProtoGen
     Editor/Panels/ViewportPanel.cpp
     Editor/Panels/InspectorPanel.cpp
     Editor/Panels/ChatPanel.cpp
+    Editor/LauncherLayer.h
+    Editor/LauncherLayer.cpp
+    Editor/ImGuiCoreLayer.h
+    Editor/ImGuiCoreLayer.cpp
+    Editor/EditorDockLayer.h
+    Editor/EditorDockLayer.cpp
 
     # Net
     Net/ApiClient.cpp
@@ -156,10 +162,14 @@ add_executable(GameProtoGen
     Auth/OidcClient.cpp
     Auth/LoopbackServer.h
     Auth/LoopbackServer.cpp
+    Auth/TokenManager.h
+
+    Runtime/GameRunner.cpp
+    Runtime/GameRunner.h
 
     # ImGui extra
     ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
- "Auth/TokenManager.h" "Editor/LauncherLayer.h" "Editor/LauncherLayer.cpp" "Editor/ImGuiCoreLayer.h" "Editor/ImGuiCoreLayer.cpp" "Editor/EditorDockLayer.h" "Editor/EditorDockLayer.cpp")
+)
 
 target_sources(GameProtoGen PRIVATE
     ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
