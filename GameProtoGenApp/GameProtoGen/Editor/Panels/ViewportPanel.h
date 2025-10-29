@@ -4,9 +4,10 @@
 #include <memory>
 #include <optional>
 #include <SFML/Graphics.hpp>
-#include <imgui.h>
 #include <vector>
 #include <string>
+
+struct ImVec2;
 
 class ViewportPanel : public gp::Layer {
 public:

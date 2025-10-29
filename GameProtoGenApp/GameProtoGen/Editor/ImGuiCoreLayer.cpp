@@ -1,9 +1,9 @@
 // Editor/ImGuiCoreLayer.cpp
 #include "ImGuiCoreLayer.h"
 #include "Core/SFMLWindow.h"
-#include "EditorFonts.h"
 #include <imgui.h>
 #include <imgui-SFML.h>
+#include "Editor/EditorFonts.h"   // <- imprescindible
 
 ImGuiCoreLayer::ImGuiCoreLayer(gp::SFMLWindow& window) : m_Window(window) {}
 

@@ -1,13 +1,13 @@
 #include "InspectorPanel.h"
 #include "Runtime/SceneContext.h"
 #include "ECS/Components.h"
-#include "Editor/EditorFonts.h"
 #include "Systems/Renderer2D.h"
+#include <imgui.h>
 #include <imgui_stdlib.h>
 #include <imgui-SFML.h>
+#include "Editor/EditorFonts.h"
 #include <cfloat>
 
-#include <imgui.h>
 #include <cstdint>
 #include <algorithm>
 #include "tinyfiledialogs.h"

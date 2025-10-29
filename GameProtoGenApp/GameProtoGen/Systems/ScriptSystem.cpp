@@ -2,7 +2,15 @@
 #include <fstream>
 #include <sstream>
 #include <filesystem>
+#include <string>
+
+
+#ifdef GP_BUILD_EDITOR
 #include "Editor/Panels/ViewportPanel.h"
+inline void GP_EditorLog(const std::string& s) { ViewportPanel::AppendLog(s); }
+#else
+inline void GP_EditorLog(const std::string&) { /* no-op en player */ }
+#endif
 
 using Systems::ScriptSystem;
 
@@ -38,20 +46,20 @@ void ScriptSystem::Update(Scene& scene, float dt) {
         std::string err;
         if (!sc.loaded) {
             if (!vm.RunFor(id, code, sc.path.empty() ? "<inline>" : sc.path, err)) {
-                ViewportPanel::AppendLog(std::string("[SCRIPT] Error run: ") + err);
+                GP_EditorLog(std::string("[SCRIPT] Error run: ") + err);
                 continue;
             }
             if (!vm.CallOnSpawn(id, err)) {
-                ViewportPanel::AppendLog(std::string("[SCRIPT] Error on_spawn: ") + err);
+                GP_EditorLog(std::string("[SCRIPT] Error on_spawn: ") + err);
             }
             else {
-                ViewportPanel::AppendLog("[SCRIPT] on_spawn OK id=" + std::to_string(id));
+                GP_EditorLog("[SCRIPT] on_spawn OK id=" + std::to_string(id));
             }
             sc.loaded = true;
         }
 
         if (!vm.CallOnUpdate(id, dt, err)) {
-            ViewportPanel::AppendLog(std::string("[SCRIPT] Error on_update: ") + err);
+            GP_EditorLog(std::string("[SCRIPT] Error on_update: ") + err);
         }
     }
 }

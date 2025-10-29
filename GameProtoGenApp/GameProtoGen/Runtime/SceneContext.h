@@ -3,8 +3,9 @@
 #include <SFML/System/Vector2.hpp>   // 👈 necesario para sf::Vector2f
 #include "ECS/Scene.h"
 #include "ECS/Entity.h"
-#include "Net/ApiClient.h"
-#include "Auth/TokenManager.h"
+
+class ApiClient;     // forward-declare
+class TokenManager;  // forward-declare
 
 struct SceneContext {
     std::shared_ptr<Scene> scene;

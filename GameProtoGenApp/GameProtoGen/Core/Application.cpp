@@ -25,11 +25,15 @@ namespace gp {
         using clock = std::chrono::high_resolution_clock;
         auto last = clock::now();
 
+        // Attach inicial
         for (auto* l : m_Layers) l->OnAttach();
+
+        // Aseguramos contexto activo y hacemos 1er frame de ImGui-SFML
+        auto& win = static_cast<gp::SFMLWindow&>(*m_Window).Native();
+        win.setActive(true);
 
         while (m_Running) {
             m_Window->PollEvents();
-
             FlushPending();
 
             if (m_WantsClose && GetMode() == Mode::Hub) {
@@ -41,12 +45,25 @@ namespace gp {
             float dt = std::chrono::duration<float>(now - last).count();
             last = now;
 
+            // --- UPDATE ---
             for (auto* l : m_Layers) l->OnUpdate(Timestep{ dt });
+
+            // ImGui necesita la ventana ACTIVA antes de Update/Render
+            win.setActive(true);
+            ImGui::SFML::Update(win, sf::seconds(dt));
+
+            // --- GUI ---
             for (auto* l : m_Layers) l->OnGuiRender();
 
-            ImGui::SFML::Render(static_cast<gp::SFMLWindow&>(*m_Window).Native());
+            // --- RENDER ImGui + Present ---
+            ImGui::SFML::Render(win);
             m_Window->SwapBuffers();
         }
+
+        // Shutdown ordenado
+        win.setActive(true);
+        ImGui::SFML::Shutdown(win);
+        ImGui::DestroyContext();
     }
 
     void Application::PushLayer(Layer* layer) {

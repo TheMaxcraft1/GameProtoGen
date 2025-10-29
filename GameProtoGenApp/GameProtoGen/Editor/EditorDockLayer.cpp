@@ -17,6 +17,8 @@
 #include <filesystem>
 #include <sstream>
 #include <iomanip>
+#include "Editor/ExportPlayable.h"
+#include <tinyfiledialogs.h>
 
 // ======================== Helpers (copiados de tu ImGuiLayer.cpp) ========================
 namespace {
@@ -234,9 +236,20 @@ void EditorDockLayer::OnGuiRender() {
             if (ImGui::MenuItem("Guardar", "Ctrl+S")) DoSave();
             if (ImGui::MenuItem("Cargar", "Ctrl+O")) DoLoad();
             ImGui::Separator();
+            if (ImGui::MenuItem("Exportar prototipo…", "Ctrl+E")) {
+                const char* out = tinyfd_selectFolderDialog("Elegí carpeta de exportación", nullptr);
+                if (out && *out) {
+                    Exporter::ExportPlayable(out);
+                }
+                else {
+                    ViewportPanel::AppendLog("[EXPORT] cancelado");
+                }
+            }
+            ImGui::Separator();
             if (ImGui::MenuItem("Iniciar sesión…")) {
                 DoLoginInteractive();
             }
+
             ImGui::Separator();
             if (ImGui::MenuItem("Salir", "Alt+F4")) {
                 gp::Application::Get().RequestClose();
@@ -306,7 +319,10 @@ void EditorDockLayer::OnGuiRender() {
     if (!playing) {
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) DoSave();
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false)) DoLoad();
-
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_E, false)) {
+            const char* out = tinyfd_selectFolderDialog("Elegí carpeta de exportación", nullptr);
+            if (out && *out) Exporter::ExportPlayable(out);
+        }
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_N, false)) {
             auto& ctx = SceneContext::Get();
             if (ctx.scene) {
