@@ -8,6 +8,8 @@
 ImGuiCoreLayer::ImGuiCoreLayer(gp::SFMLWindow& window) : m_Window(window) {}
 
 void ImGuiCoreLayer::OnAttach() {
+    m_Window.Native().setActive(true);
+
     ImGui::SFML::Init(m_Window.Native());
     m_Window.SetRawEventCallback([this](const void* e) {
         ImGui::SFML::ProcessEvent(m_Window.Native(), *static_cast<const sf::Event*>(e));
@@ -25,5 +27,6 @@ void ImGuiCoreLayer::OnAttach() {
 }
 void ImGuiCoreLayer::OnDetach() { ImGui::SFML::Shutdown(); }
 void ImGuiCoreLayer::OnUpdate(const gp::Timestep&) {
+    m_Window.Native().setActive(true);
     ImGui::SFML::Update(m_Window.Native(), m_Clock.restart());
 }

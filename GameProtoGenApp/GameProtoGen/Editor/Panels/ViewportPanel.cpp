@@ -10,6 +10,12 @@
 #include <optional>
 #include <cmath>
 #include <algorithm>
+#include "Core/SFMLWindow.h"   // <-- AGREGAR
+
+// Helper local (arriba del archivo, por ejemplo bajo los #includes)
+static sf::RenderWindow& MainWindow() {
+    return static_cast<gp::SFMLWindow&>(gp::Application::Get().Window()).Native();
+}
 
 std::vector<std::string> ViewportPanel::s_Log{};  // ← DEFINICIÓN ÚNICA
 
@@ -54,6 +60,7 @@ void ViewportPanel::EnsureRT() {
         v.setCenter(sf::Vector2f(static_cast<float>(m_VirtW) * 0.5f,
             static_cast<float>(m_VirtH) * 0.5f));
         m_RT->setView(v);
+        m_RT->setActive(false);
 
         // Publicamos un valor inicial del centro de cámara
         SceneContext::Get().cameraCenter = m_CamCenter;
@@ -66,6 +73,7 @@ void ViewportPanel::EnsureRT() {
         pv.setCenter(sf::Vector2f(static_cast<float>(m_VirtW) * 0.5f,
             static_cast<float>(m_VirtH) * 0.5f));
         m_PresentRT->setView(pv);
+        m_PresentRT->setActive(false);
     }
 }
 
@@ -200,6 +208,7 @@ void ViewportPanel::OnGuiRender() {
 
     if (m_RT && m_PresentRT) {
         // 1) Dibujar escena en RT principal
+        m_RT->setActive(true);
         m_RT->clear(sf::Color(30, 30, 35));
         if (ctx.scene) {
             // Cámara: en play sigue al player, en pausa se mantiene donde esté
@@ -232,14 +241,19 @@ void ViewportPanel::OnGuiRender() {
             if (!m_Playing) DrawSelectionGizmo(*m_RT);
         }
         m_RT->display();
+        m_RT->setActive(false);
 
         // 2) Espejo vertical a RT de presentación (sólo visual)
+        m_PresentRT->setActive(true);
         m_PresentRT->clear(sf::Color::Black);
         sf::Sprite spr(m_RT->getTexture());
         spr.setScale(sf::Vector2f{ 1.f, -1.f });
         spr.setPosition(sf::Vector2f{ 0.f, static_cast<float>(m_VirtH) });
         m_PresentRT->draw(spr);
         m_PresentRT->display();
+        m_PresentRT->setActive(false);
+
+        MainWindow().setActive(true);
 
         // 3) Mostrar con letterboxing
         ImVec2 imgSize{ targetW, targetH };
