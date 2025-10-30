@@ -1,5 +1,6 @@
 #include "LauncherLayer.h"
 #include "Runtime/SceneContext.h"
+#include "Runtime/EditorContext.h"
 #include "ECS/Scene.h"
 #include "ECS/SceneSerializer.h"
 #include "Editor/Panels/ViewportPanel.h"
@@ -25,38 +26,38 @@ static void EnsureSavesDir() {
 }
 
 bool LauncherLayer::TryAutoLogin() {
-    auto& ctx = SceneContext::Get();
+    auto& edx = EditorContext::Get();
 
-    // Asegurar que haya TokenManager (por si alguien llama al Launcher sin pasar por EditorApp::Setup)
-    if (!ctx.tokenManager) {
+    // Asegurar que haya TokenManager (por si alguien llega al launcher “frío”)
+    if (!edx.tokenManager) {
         OidcConfig cfg;
         cfg.client_id = "2041dbc5-c266-43aa-af66-765b1440f34a";
         cfg.authorize_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/authorize";
         cfg.token_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/token";
         cfg.scopes = { "openid","profile","offline_access","api://gameprotogen/access_as_user" };
-        ctx.tokenManager = std::make_shared<TokenManager>(cfg);
+        edx.tokenManager = std::make_shared<TokenManager>(cfg);
     }
 
     // 1) Intentar cargar tokens persistidos
-    if (!ctx.tokenManager->Load()) return false;
+    if (!edx.tokenManager->Load()) return false;
 
-    // 2) Conectar el refresco/preflight al ApiClient (si existe)
-    if (ctx.apiClient) {
-        ctx.apiClient->SetTokenRefresher([mgr = ctx.tokenManager]() -> std::optional<std::string> {
+    // 2) Conectar refresco/preflight al ApiClient (si existe)
+    if (edx.apiClient) {
+        edx.apiClient->SetTokenRefresher([mgr = edx.tokenManager]() -> std::optional<std::string> {
             return mgr->Refresh();
             });
-        ctx.apiClient->SetPreflight([mgr = ctx.tokenManager]() { (void)mgr->EnsureFresh(); });
+        edx.apiClient->SetPreflight([mgr = edx.tokenManager]() { (void)mgr->EnsureFresh(); });
     }
 
-    // 3) Asegurar que el access_token esté fresco (puede refrescar usando refresh_token)
-    if (!ctx.tokenManager->EnsureFresh()) return false;
+    // 3) Asegurar que el access_token esté fresco
+    if (!edx.tokenManager->EnsureFresh()) return false;
 
     // 4) Si hay access_token, setearlo en el ApiClient
-    const std::string& at = ctx.tokenManager->AccessToken();
+    const std::string& at = edx.tokenManager->AccessToken();
     if (at.empty()) return false;
 
-    if (ctx.apiClient) {
-        ctx.apiClient->SetAccessToken(at);
+    if (edx.apiClient) {
+        edx.apiClient->SetAccessToken(at);
     }
     return true;
 }
@@ -67,8 +68,8 @@ void LauncherLayer::OnAttach() {
 }
 
 void LauncherLayer::DoLoginInteractive() {
-    auto& ctx = SceneContext::Get();
-    if (!ctx.apiClient) return;
+    auto& edx = EditorContext::Get();
+    if (!edx.apiClient) return;
 
     OidcConfig cfg;
     cfg.client_id = "2041dbc5-c266-43aa-af66-765b1440f34a";
@@ -84,14 +85,14 @@ void LauncherLayer::DoLoginInteractive() {
         return;
     }
 
-    if (!ctx.tokenManager) ctx.tokenManager = std::make_shared<TokenManager>(cfg);
-    ctx.tokenManager->OnInteractiveLogin(*tokens);
+    if (!edx.tokenManager) edx.tokenManager = std::make_shared<TokenManager>(cfg);
+    edx.tokenManager->OnInteractiveLogin(*tokens);
 
-    ctx.apiClient->SetAccessToken(tokens->access_token);
-    ctx.apiClient->SetTokenRefresher([mgr = ctx.tokenManager]() -> std::optional<std::string> {
+    edx.apiClient->SetAccessToken(tokens->access_token);
+    edx.apiClient->SetTokenRefresher([mgr = edx.tokenManager]() -> std::optional<std::string> {
         return mgr->Refresh();
         });
-    ctx.apiClient->SetPreflight([mgr = ctx.tokenManager]() { (void)mgr->EnsureFresh(); });
+    edx.apiClient->SetPreflight([mgr = edx.tokenManager]() { (void)mgr->EnsureFresh(); });
 
     m_loggedIn = true;
 }
@@ -116,9 +117,9 @@ void LauncherLayer::DrawProjectPicker() {
 }
 
 void LauncherLayer::SeedNewScene() {
-    auto& ctx = SceneContext::Get();
-    ctx.scene = std::make_shared<Scene>();
-    auto& s = *ctx.scene;
+    auto& scx = SceneContext::Get();
+    scx.scene = std::make_shared<Scene>();
+    auto& s = *scx.scene;
 
     // jugador base
     auto e = s.CreateEntity();
@@ -154,12 +155,13 @@ void LauncherLayer::SeedNewScene() {
 
 void LauncherLayer::EnterEditor() {
     auto& app = gp::Application::Get();
-    auto& ctx = SceneContext::Get();
+    auto& scx = SceneContext::Get();
+    auto& edx = EditorContext::Get();
 
     // cargar o sembrar
     if (!m_selected.empty() && exists(m_selected)) {
-        if (!ctx.scene) ctx.scene = std::make_shared<Scene>();
-        SceneSerializer::Load(*ctx.scene, m_selected);
+        if (!scx.scene) scx.scene = std::make_shared<Scene>();
+        SceneSerializer::Load(*scx.scene, m_selected);
         Renderer2D::ClearTextureCache();
     }
     else {
@@ -174,7 +176,7 @@ void LauncherLayer::EnterEditor() {
     app.PushLayer(new EditorDockLayer());
     app.PushLayer(new ViewportPanel());
     app.PushLayer(new InspectorPanel());
-    app.PushLayer(new ChatPanel(ctx.apiClient));
+    app.PushLayer(new ChatPanel(edx.apiClient)); // << usa EditorContext
 
     // cerrar launcher
     app.PopLayer(this);

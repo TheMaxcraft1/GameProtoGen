@@ -169,6 +169,8 @@ add_executable(GameProtoGen
 
     Runtime/GameRunner.cpp
     Runtime/GameRunner.h
+    Runtime/EditorContext.h
+    Runtime/SceneContext.h
 
     # ImGui extra
     ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp

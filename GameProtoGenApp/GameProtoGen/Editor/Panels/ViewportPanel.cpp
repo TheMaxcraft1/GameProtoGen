@@ -1,5 +1,6 @@
 #include "ViewportPanel.h"
 #include "Runtime/SceneContext.h"
+#include "Runtime/EditorContext.h"   // ⬅️ nuevo
 #include "Runtime/GameRunner.h"
 
 #include <imgui.h>
@@ -17,7 +18,6 @@ static inline void ClampDockedMinWidth(float minW) {
     }
 }
 
-
 ViewportPanel::ViewportPanel() {}
 
 void ViewportPanel::OnAttach() {
@@ -34,7 +34,7 @@ void ViewportPanel::OnAttach() {
     m_IcoSelect.setSmooth(true);
     m_IcoPan.setSmooth(true);
     m_IcoRotate.setSmooth(true);
-	m_IcoScale.setSmooth(true);
+    m_IcoScale.setSmooth(true);
 }
 
 void ViewportPanel::EnsureRT() {
@@ -53,7 +53,7 @@ void ViewportPanel::EnsureRT() {
             static_cast<float>(m_VirtH) * 0.5f));
         m_RT->setView(v);
 
-        // Publicamos un valor inicial del centro de cámara
+        // Publicamos un valor inicial del centro de cámara (EditorContext)
         SceneContext::Get().cameraCenter = m_CamCenter;
 
         // RT de presentación (flip vertical sólo visual)
@@ -68,19 +68,18 @@ void ViewportPanel::EnsureRT() {
 }
 
 void ViewportPanel::OnUpdate(const gp::Timestep& dt) {
-    auto& ctx = SceneContext::Get();
-    if (!ctx.scene) return;
+    auto& scx = SceneContext::Get();
+    if (!scx.scene) return;
 
     if (m_Playing) {
-        GameRunner::Step(*ctx.scene, dt.dt);
+        GameRunner::Step(*scx.scene, dt.dt);
     }
 }
 
-
 void ViewportPanel::OnGuiRender() {
-    auto& ctx = SceneContext::Get();
+    auto& scx = SceneContext::Get();
+    auto& edx = EditorContext::Get();
 
-    //TODO: REVISAR ESTO!
     auto TogglePlay = [&]() {
         bool wasPlaying = m_Playing;
         m_Playing = !m_Playing;
@@ -89,15 +88,14 @@ void ViewportPanel::OnGuiRender() {
         m_DragEntity = 0;
         m_Panning = false;
 
-        SceneContext::Get().runtime.playing = m_Playing;
+        edx.runtime.playing = m_Playing;
         AppendLog(std::string("Runtime: ") + (m_Playing ? "Play" : "Pause"));
 
-        auto& ctx2 = SceneContext::Get();
-        if (ctx2.scene) {
-            if (!wasPlaying && m_Playing)  GameRunner::EnterPlay(*ctx2.scene);
-            if (wasPlaying && !m_Playing)  GameRunner::ExitPlay(*ctx2.scene);
+        if (scx.scene) {
+            if (!wasPlaying && m_Playing)  GameRunner::EnterPlay(*scx.scene);
+            if (wasPlaying && !m_Playing)  GameRunner::ExitPlay(*scx.scene);
         }
-    };
+        };
 
     // Hotkey F5
     if (ImGui::IsKeyPressed(ImGuiKey_F5)) TogglePlay();
@@ -115,7 +113,7 @@ void ViewportPanel::OnGuiRender() {
     if (IconButtonPlayPause()) TogglePlay();
     ImGui::SameLine(0.f, 12.f);
 
-    // Pan temporal (Q o Espacio) - el botón Pan se ve activo mientras se mantiene
+    // Pan temporal (Q o Espacio)
     const bool panChord = (!m_Playing) && (ImGui::IsKeyDown(ImGuiKey_Q) || ImGui::IsKeyDown(ImGuiKey_Space));
 
     // Herramientas (deshabilitadas en Play)
@@ -125,7 +123,7 @@ void ViewportPanel::OnGuiRender() {
         const ImVec4 on = st.Colors[ImGuiCol_ButtonActive];
         const ImVec4 off = st.Colors[ImGuiCol_Button];
 
-        // Select (activo sólo si es la tool real y NO hay panChord)
+        // Select
         {
             const bool selectActive = (m_Tool == Tool::Select) && !panChord;
             ImGui::PushStyleColor(ImGuiCol_Button, selectActive ? on : off);
@@ -135,7 +133,7 @@ void ViewportPanel::OnGuiRender() {
             ImGui::SameLine();
         }
 
-        // Pan (activo si es la tool real o si hay panChord)
+        // Pan
         {
             const bool panActive = (m_Tool == Tool::Pan) || panChord;
             ImGui::PushStyleColor(ImGuiCol_Button, panActive ? on : off);
@@ -144,14 +142,18 @@ void ViewportPanel::OnGuiRender() {
             if (pressed) m_Tool = Tool::Pan;
             ImGui::SameLine();
         }
-        { // Rotate
+
+        // Rotate
+        {
             const bool rotActive = (m_Tool == Tool::Rotate);
             ImGui::PushStyleColor(ImGuiCol_Button, rotActive ? on : off);
             bool pressed = IconButtonRotate(rotActive);
             ImGui::PopStyleColor();
             if (pressed) m_Tool = Tool::Rotate;
         }
-        { // Scale
+
+        // Scale
+        {
             const bool scaleActive = (m_Tool == Tool::Scale);
             ImGui::PushStyleColor(ImGuiCol_Button, scaleActive ? on : off);
             bool pressed = IconButtonScale(scaleActive);
@@ -163,21 +165,18 @@ void ViewportPanel::OnGuiRender() {
         if (ImGui::IsKeyPressed(ImGuiKey_1)) m_Tool = Tool::Select;
         if (ImGui::IsKeyPressed(ImGuiKey_2)) m_Tool = Tool::Pan;
         if (ImGui::IsKeyPressed(ImGuiKey_3)) m_Tool = Tool::Rotate;
-		if (ImGui::IsKeyPressed(ImGuiKey_4)) m_Tool = Tool::Scale;
+        if (ImGui::IsKeyPressed(ImGuiKey_4)) m_Tool = Tool::Scale;
     }
     ImGui::EndDisabled();
-
-    // ✂️ Se quita el label "Snap: ON" y el control de Grid (DragFloat)
-    // (El snapping sigue activo con el valor de m_Grid)
 
     ImGui::EndChild();
 
     // ───────────────────────── Viewport area ───────────────────────────
     ImVec2 avail = ImGui::GetContentRegionAvail();
 
-    // Reservamos un alto fijo para la consola debajo (p. ej., 140 px)
+    // Alto fijo consola
     const float consoleHeight = 140.f;
-    float availForImageY = std::max(0.0f, avail.y - consoleHeight - 6.0f); // 6px separación
+    float availForImageY = std::max(0.0f, avail.y - consoleHeight - 6.0f);
 
     float targetW = std::floor(avail.x > 1 ? avail.x : 1.0f);
     float targetH = std::floor(targetW * 9.0f / 16.0f);
@@ -191,17 +190,17 @@ void ViewportPanel::OnGuiRender() {
     if (m_RT && m_PresentRT) {
         // 1) Dibujar escena en RT principal
         m_RT->clear(sf::Color(30, 30, 35));
-        if (ctx.scene) {
-            // Cámara: en play sigue al player, en pausa se mantiene donde esté
+        if (scx.scene) {
+            // Cámara: en play sigue al player; en pausa usa m_CamCenter
             sf::Vector2f desiredCenter = m_CamCenter;
             if (m_Playing) {
                 EntityID playerId = 0;
-                if (ctx.selected && ctx.scene->playerControllers.contains(ctx.selected.id))
-                    playerId = ctx.selected.id;
-                else if (!ctx.scene->playerControllers.empty())
-                    playerId = ctx.scene->playerControllers.begin()->first;
-                if (playerId && ctx.scene->transforms.contains(playerId))
-                    desiredCenter = ctx.scene->transforms[playerId].position;
+                if (edx.selected && scx.scene->playerControllers.contains(edx.selected.id))
+                    playerId = edx.selected.id;
+                else if (!scx.scene->playerControllers.empty())
+                    playerId = scx.scene->playerControllers.begin()->first;
+                if (playerId && scx.scene->transforms.contains(playerId))
+                    desiredCenter = scx.scene->transforms[playerId].position;
             }
             if (!m_Dragging && !m_Panning) m_CamCenter = desiredCenter;
 
@@ -209,21 +208,20 @@ void ViewportPanel::OnGuiRender() {
             v.setCenter(m_CamCenter);
             m_RT->setView(v);
 
-            // 👈 ACTUALIZAMOS cameraCenter CADA FRAME
-            SceneContext::Get().cameraCenter = m_CamCenter;
+            scx.cameraCenter = m_CamCenter;
 
             // Grilla SOLO en pausa/edición
             if (!m_Playing) DrawGrid(*m_RT);
 
             // Objetos
-            GameRunner::Render(*ctx.scene, *m_RT, m_CamCenter, { m_VirtW, m_VirtH });
+            GameRunner::Render(*scx.scene, *m_RT, m_CamCenter, { m_VirtW, m_VirtH });
 
             // Gizmo de selección SOLO en pausa
             if (!m_Playing) DrawSelectionGizmo(*m_RT);
         }
         m_RT->display();
 
-        // 2) Espejo vertical a RT de presentación (sólo visual)
+        // 2) Espejo vertical a RT de presentación
         m_PresentRT->clear(sf::Color::Black);
         sf::Sprite spr(m_RT->getTexture());
         spr.setScale(sf::Vector2f{ 1.f, -1.f });
@@ -246,11 +244,10 @@ void ViewportPanel::OnGuiRender() {
         ImVec2 imgMax = ImGui::GetItemRectMax();
         ImGuiIO& io = ImGui::GetIO();
 
-        // PAN (herramienta Pan o panChord + LMB) SOLO EN PAUSA
+        // PAN (sólo en pausa)
         if (!m_Playing) {
             const bool hovered = ImGui::IsItemHovered();
 
-            // Cambiar cursor cuando hay contexto de pan (herramienta activa o atajo pulsado)
             if (hovered && ((m_Tool == Tool::Pan) || panChord)) {
                 ImGui::SetMouseCursor(m_Panning ? ImGuiMouseCursor_ResizeAll : ImGuiMouseCursor_Hand);
             }
@@ -272,16 +269,15 @@ void ViewportPanel::OnGuiRender() {
                     m_Panning = false;
                 }
                 else if (hovered) {
-                    // Convertir delta ImGui -> RT
                     const float scaleX = static_cast<float>(m_VirtW) / (imgMax.x - imgMin.x);
                     const float scaleY = static_cast<float>(m_VirtH) / (imgMax.y - imgMin.y);
                     sf::Vector2f deltaRT{ io.MouseDelta.x * scaleX, io.MouseDelta.y * scaleY };
-                    m_CamCenter -= deltaRT; // arrastrar lienzo
+                    m_CamCenter -= deltaRT;
                 }
             }
         }
 
-		// ROTAR ENTIDAD SELECCIONADA (sólo en pausa, herramienta Rotate y si NO estamos paneando)
+        // ROTATE (sólo en pausa)
         if (!m_Playing && m_Tool == Tool::Rotate && !m_Panning) {
             const bool hovered = ImGui::IsItemHovered();
 
@@ -290,26 +286,22 @@ void ViewportPanel::OnGuiRender() {
 
                 if (auto worldOpt = ScreenToWorld(io.MousePos, imgMin, imgMax)) {
                     sf::Vector2f world = *worldOpt;
-                    auto& cx = SceneContext::Get();
 
-                    // Al presionar: pick & (si hay hit) seleccionar y arrancar rotación
                     if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                         EntityID hit = PickEntityAt(world);
-                        if (cx.scene && hit) {
-                            // Seleccionar si era otra:
-                            if (!cx.selected || cx.selected.id != hit) {
-                                cx.selected = Entity{ hit };
+                        if (scx.scene && hit) {
+                            if (!edx.selected || edx.selected.id != hit) {
+                                edx.selected = Entity{ hit };
                                 AppendLog("Seleccionado entity id=" + std::to_string(hit));
                             }
 
-                            // Iniciar rotación
                             m_Rotating = true;
-                            m_Dragging = false;        // por las dudas
+                            m_Dragging = false;
                             m_DragEntity = hit;
 
-                            auto& t = cx.scene->transforms[hit];
+                            auto& t = scx.scene->transforms[hit];
                             sf::Vector2f center = t.position;
-                            if (auto itC = cx.scene->colliders.find(hit); itC != cx.scene->colliders.end()) {
+                            if (auto itC = scx.scene->colliders.find(hit); itC != scx.scene->colliders.end()) {
                                 center += itC->second.offset;
                             }
 
@@ -321,16 +313,15 @@ void ViewportPanel::OnGuiRender() {
                             m_RotateStartEntityAngle = t.rotationDeg;
                             AppendLog("Rotar: inicio id=" + std::to_string(hit));
                         }
-                        // Si clickeaste vacío: NO des-seleccionar, y no arrancar rotación
                     }
 
-                    // Mientras se mantiene el botón: actualizar rotación
-                    if (m_Rotating && ImGui::IsMouseDown(ImGuiMouseButton_Left) && cx.scene && cx.selected) {
-                        EntityID id = cx.selected.id;
-                        if (cx.scene->transforms.contains(id)) {
-                            auto& t = cx.scene->transforms[id];
+                    // Mientras se mantiene
+                    if (m_Rotating && ImGui::IsMouseDown(ImGuiMouseButton_Left) && scx.scene && edx.selected) {
+                        EntityID id = edx.selected.id;
+                        if (scx.scene->transforms.contains(id)) {
+                            auto& t = scx.scene->transforms[id];
                             sf::Vector2f center = t.position;
-                            if (auto itC = cx.scene->colliders.find(id); itC != cx.scene->colliders.end()) {
+                            if (auto itC = scx.scene->colliders.find(id); itC != scx.scene->colliders.end()) {
                                 center += itC->second.offset;
                             }
 
@@ -352,12 +343,11 @@ void ViewportPanel::OnGuiRender() {
                 }
             }
 
-            // Al soltar: terminar rotación (si estaba activa)
+            // Al soltar
             if (m_Rotating && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-                auto& cx2 = SceneContext::Get();
-                if (cx2.scene && cx2.selected && cx2.scene->transforms.contains(cx2.selected.id)) {
-                    float finalDeg = cx2.scene->transforms[cx2.selected.id].rotationDeg;
-                    AppendLog("Rotar: fin id=" + std::to_string(cx2.selected.id) +
+                if (scx.scene && edx.selected && scx.scene->transforms.contains(edx.selected.id)) {
+                    float finalDeg = scx.scene->transforms[edx.selected.id].rotationDeg;
+                    AppendLog("Rotar: fin id=" + std::to_string(edx.selected.id) +
                         " -> " + std::to_string((int)std::round(finalDeg)) + "°");
                 }
                 m_Rotating = false;
@@ -365,6 +355,7 @@ void ViewportPanel::OnGuiRender() {
             }
         }
 
+        // SCALE (sólo en pausa)
         if (!m_Playing && m_Tool == Tool::Scale && !m_Panning) {
             const bool hovered = ImGui::IsItemHovered();
 
@@ -373,20 +364,19 @@ void ViewportPanel::OnGuiRender() {
 
                 if (auto worldOpt = ScreenToWorld(io.MousePos, imgMin, imgMax)) {
                     sf::Vector2f world = *worldOpt;
-                    auto& cx = SceneContext::Get();
 
-                    // Iniciar: pick & start
+                    // Iniciar
                     if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                         EntityID hit = PickEntityAt(world);
-                        if (cx.scene && hit) {
-                            if (!cx.selected || cx.selected.id != hit) {
-                                cx.selected = Entity{ hit };
+                        if (scx.scene && hit) {
+                            if (!edx.selected || edx.selected.id != hit) {
+                                edx.selected = Entity{ hit };
                                 AppendLog("Seleccionado entity id=" + std::to_string(hit));
                             }
-                            if (cx.scene->transforms.contains(hit)) {
-                                const auto& t = cx.scene->transforms[hit];
+                            if (scx.scene->transforms.contains(hit)) {
+                                const auto& t = scx.scene->transforms[hit];
                                 sf::Vector2f center = t.position;
-                                if (auto itC = cx.scene->colliders.find(hit); itC != cx.scene->colliders.end())
+                                if (auto itC = scx.scene->colliders.find(hit); itC != scx.scene->colliders.end())
                                     center += itC->second.offset;
 
                                 m_Scaling = true;
@@ -400,43 +390,35 @@ void ViewportPanel::OnGuiRender() {
                                 AppendLog("Escalar: inicio id=" + std::to_string(hit));
                             }
                         }
-                        // clic en vacío: no deselecciona y no inicia
                     }
 
                     // Actualizar
-                    if (m_Scaling && ImGui::IsMouseDown(ImGuiMouseButton_Left) && cx.scene && cx.selected) {
-                        EntityID id = cx.selected.id;
-                        if (cx.scene->transforms.contains(id)) {
-                            auto& t = cx.scene->transforms[id];
+                    if (m_Scaling && ImGui::IsMouseDown(ImGuiMouseButton_Left) && scx.scene && edx.selected) {
+                        EntityID id = edx.selected.id;
+                        if (scx.scene->transforms.contains(id)) {
+                            auto& t = scx.scene->transforms[id];
                             sf::Vector2f center = t.position;
-                            if (auto itC = cx.scene->colliders.find(id); itC != cx.scene->colliders.end())
+                            if (auto itC = scx.scene->colliders.find(id); itC != scx.scene->colliders.end())
                                 center += itC->second.offset;
 
                             sf::Vector2f cur = world - center;
                             float curLen = std::max(1e-3f, std::sqrt(cur.x * cur.x + cur.y * cur.y));
 
-                            // Factores por-eje
                             auto safe_ratio = [](float num, float den) {
                                 return (std::fabs(den) < 1e-3f) ? 1.f : (num / den);
                                 };
-                            // Ratios crudos
                             float rx = safe_ratio(cur.x, m_ScaleStartMouse.x);
                             float ry = safe_ratio(cur.y, m_ScaleStartMouse.y);
                             float ru = curLen / m_ScaleStartLen;
 
-                            // Suavizado: 1 + s*(r - 1)
-                            auto soften = [&](float r) {
-                                return 1.f + m_ScaleSensitivity * (r - 1.f);
-                                };
+                            auto soften = [&](float r) { return 1.f + m_ScaleSensitivity * (r - 1.f); };
 
-                            // Umbral para evitar explosión en ejes con arranque ~0
                             const float kAxisEps = 4.f;
 
-                            // Ratios suavizados por eje
                             float fx = (std::fabs(m_ScaleStartMouse.x) < kAxisEps) ? soften(ru) : soften(rx);
                             float fy = (std::fabs(m_ScaleStartMouse.y) < kAxisEps) ? soften(ru) : soften(ry);
 
-                            // Uniforme con Shift (usa también suavizado)
+                            // Uniforme con Shift
                             if (io.KeyShift) {
                                 float fu = soften(ru);
                                 fx = fy = fu;
@@ -447,7 +429,7 @@ void ViewportPanel::OnGuiRender() {
                                 m_ScaleStartEntityScale.y * fy
                             };
 
-                            // Snap con Ctrl (paso 0.1)
+                            // Snap con Ctrl (0.1)
                             if (io.KeyCtrl) {
                                 auto snap = [](float v, float step) {
                                     return std::round(v / step) * step;
@@ -456,7 +438,7 @@ void ViewportPanel::OnGuiRender() {
                                 newScale.y = snap(newScale.y, 0.1f);
                             }
 
-                            // Clamp mínimo para evitar colapsos
+                            // Clamp mínimo
                             newScale.x = std::clamp(newScale.x, -1000.f, -0.05f) < 0.f ? newScale.x : std::max(newScale.x, 0.05f);
                             newScale.y = std::clamp(newScale.y, -1000.f, -0.05f) < 0.f ? newScale.y : std::max(newScale.y, 0.05f);
 
@@ -468,10 +450,9 @@ void ViewportPanel::OnGuiRender() {
 
             // Finalizar
             if (m_Scaling && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-                auto& cx2 = SceneContext::Get();
-                if (cx2.scene && cx2.selected && cx2.scene->transforms.contains(cx2.selected.id)) {
-                    const auto s = cx2.scene->transforms[cx2.selected.id].scale;
-                    AppendLog("Escalar: fin id=" + std::to_string(cx2.selected.id) +
+                if (scx.scene && edx.selected && scx.scene->transforms.contains(edx.selected.id)) {
+                    const auto s = scx.scene->transforms[edx.selected.id].scale;
+                    AppendLog("Escalar: fin id=" + std::to_string(edx.selected.id) +
                         " -> (" + std::to_string(s.x) + ", " + std::to_string(s.y) + ")");
                 }
                 m_Scaling = false;
@@ -479,7 +460,7 @@ void ViewportPanel::OnGuiRender() {
             }
         }
 
-        // EDITAR ENTIDADES (sólo en pausa, herramienta Select y si NO estamos paneando)
+        // SELECT / DRAG (sólo en pausa)
         if (!m_Playing && m_Tool == Tool::Select && !m_Panning) {
             if (ImGui::IsItemHovered()) {
                 if (auto worldOpt = ScreenToWorld(io.MousePos, imgMin, imgMax)) {
@@ -488,33 +469,30 @@ void ViewportPanel::OnGuiRender() {
                     // Click para seleccionar + comenzar drag
                     if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                         EntityID id = PickEntityAt(world);
-                        auto& c = SceneContext::Get();
-                        if (c.scene && id) {
-                            c.selected = Entity{ id };
+                        if (scx.scene && id) {
+                            edx.selected = Entity{ id };
                             m_Dragging = true;
                             m_DragEntity = id;
-                            m_DragOffset = c.scene->transforms[id].position - world; // offset cómodo
+                            m_DragOffset = scx.scene->transforms[id].position - world;
                             AppendLog("Seleccionado entity id=" + std::to_string(id));
                         }
                         else {
-                            c.selected = Entity{};
+                            edx.selected = Entity{};
                         }
                     }
 
-                    // Arrastre (Snap ON interno)
+                    // Arrastre
                     if (m_Dragging && ImGui::IsMouseDown(ImGuiMouseButton_Left) && m_DragEntity) {
-                        auto& c2 = SceneContext::Get();
-                        if (c2.scene && c2.scene->transforms.contains(m_DragEntity)) {
+                        if (scx.scene && scx.scene->transforms.contains(m_DragEntity)) {
                             sf::Vector2f pos = world + m_DragOffset;
                             if (m_Grid > 0.0f) {
                                 pos.x = std::round(pos.x / m_Grid) * m_Grid;
                                 pos.y = std::round(pos.y / m_Grid) * m_Grid;
                             }
-                            c2.scene->transforms[m_DragEntity].position = pos;
+                            scx.scene->transforms[m_DragEntity].position = pos;
 
-                            // Si tiene física, lo frenamos
-                            if (c2.scene->physics.contains(m_DragEntity)) {
-                                auto& ph = c2.scene->physics[m_DragEntity];
+                            if (scx.scene->physics.contains(m_DragEntity)) {
+                                auto& ph = scx.scene->physics[m_DragEntity];
                                 ph.velocity = { 0.f, 0.f };
                                 ph.onGround = false;
                             }
@@ -523,12 +501,11 @@ void ViewportPanel::OnGuiRender() {
                 }
             }
 
-            // Soltar drag de entidad
+            // Soltar drag
             if (m_Dragging && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
                 if (m_DragEntity) {
-                    auto& c3 = SceneContext::Get();
-                    if (c3.scene && c3.scene->transforms.contains(m_DragEntity)) {
-                        const auto p = c3.scene->transforms[m_DragEntity].position;
+                    if (scx.scene && scx.scene->transforms.contains(m_DragEntity)) {
+                        const auto p = scx.scene->transforms[m_DragEntity].position;
                         AppendLog("Soltado entity id=" + std::to_string(m_DragEntity) +
                             " en (" + std::to_string((int)p.x) + "," + std::to_string((int)p.y) + ")");
                     }
@@ -557,49 +534,43 @@ void ViewportPanel::OnGuiRender() {
 std::optional<sf::Vector2f> ViewportPanel::ScreenToWorld(ImVec2 mouse, ImVec2 imgMin, ImVec2 imgMax) const {
     if (!m_RT) return std::nullopt;
 
-    // ¿mouse dentro del rectángulo de la imagen?
     if (mouse.x < imgMin.x || mouse.y < imgMin.y || mouse.x > imgMax.x || mouse.y > imgMax.y)
         return std::nullopt;
 
-    // uv [0..1] dentro de la imagen (flip visual ya manejado en presentación)
     ImVec2 imgSize{ imgMax.x - imgMin.x, imgMax.y - imgMin.y };
     float u = (mouse.x - imgMin.x) / imgSize.x;
     float v = (mouse.y - imgMin.y) / imgSize.y;
 
-    // píxel en el RT
     int pxRT = static_cast<int>(u * static_cast<float>(m_VirtW));
     int pyRT = static_cast<int>(v * static_cast<float>(m_VirtH));
 
-    // Clamp
     if (pxRT < 0) pxRT = 0; if (pxRT >= static_cast<int>(m_VirtW)) pxRT = static_cast<int>(m_VirtW) - 1;
     if (pyRT < 0) pyRT = 0; if (pyRT >= static_cast<int>(m_VirtH)) pyRT = static_cast<int>(m_VirtH) - 1;
 
-    // mapear a coords de mundo con la View actual del RT
     sf::Vector2f world = m_RT->mapPixelToCoords(sf::Vector2i{ pxRT, pyRT }, m_RT->getView());
     return world;
 }
 
 EntityID ViewportPanel::PickEntityAt(const sf::Vector2f& worldPos) const {
-    auto& ctx = SceneContext::Get();
-    if (!ctx.scene) return 0;
+    auto& scx = SceneContext::Get();
+    if (!scx.scene) return 0;
 
-    const auto& entities = ctx.scene->Entities();
+    const auto& entities = scx.scene->Entities();
     for (auto it = entities.rbegin(); it != entities.rend(); ++it) {
         EntityID id = it->id;
-        if (!ctx.scene->transforms.contains(id)) continue;
+        if (!scx.scene->transforms.contains(id)) continue;
 
-        const auto& t = ctx.scene->transforms.at(id);
+        const auto& t = scx.scene->transforms.at(id);
 
-        // half extents efectivos (Sprite.size primero; si no hay, usa Collider)
         sf::Vector2f he{ 0.f, 0.f };
         sf::Vector2f offset{ 0.f, 0.f };
 
         sf::Vector2f scaleAbs{ std::abs(t.scale.x), std::abs(t.scale.y) };
-        if (auto itS = ctx.scene->sprites.find(id); itS != ctx.scene->sprites.end()) {
+        if (auto itS = scx.scene->sprites.find(id); itS != scx.scene->sprites.end()) {
             he = { (itS->second.size.x * scaleAbs.x) * 0.5f,
                    (itS->second.size.y * scaleAbs.y) * 0.5f };
         }
-        else if (auto itC = ctx.scene->colliders.find(id); itC != ctx.scene->colliders.end()) {
+        else if (auto itC = scx.scene->colliders.find(id); itC != scx.scene->colliders.end()) {
             he = { itC->second.halfExtents.x * scaleAbs.x,
                    itC->second.halfExtents.y * scaleAbs.y };
             offset = itC->second.offset;
@@ -623,22 +594,23 @@ EntityID ViewportPanel::PickEntityAt(const sf::Vector2f& worldPos) const {
 // --------------------------- Gizmos / dibujo ---------------------------
 
 void ViewportPanel::DrawSelectionGizmo(sf::RenderTarget& rt) const {
-    auto& ctx = SceneContext::Get();
-    if (!ctx.scene || !ctx.selected) return;
+    auto& scx = SceneContext::Get();
+    auto& edx = EditorContext::Get();
+    if (!scx.scene || !edx.selected) return;
 
-    EntityID id = ctx.selected.id;
-    if (!ctx.scene->transforms.contains(id)) return;
-    const auto& t = ctx.scene->transforms.at(id);
+    EntityID id = edx.selected.id;
+    if (!scx.scene->transforms.contains(id)) return;
+    const auto& t = scx.scene->transforms.at(id);
 
     sf::Vector2f he{ 0.f, 0.f };
     sf::Vector2f offset{ 0.f, 0.f };
     sf::Vector2f scaleAbs{ std::abs(t.scale.x), std::abs(t.scale.y) };
 
-    if (auto itS = ctx.scene->sprites.find(id); itS != ctx.scene->sprites.end()) {
+    if (auto itS = scx.scene->sprites.find(id); itS != scx.scene->sprites.end()) {
         he = { (itS->second.size.x * scaleAbs.x) * 0.5f,
                (itS->second.size.y * scaleAbs.y) * 0.5f };
     }
-    else if (auto itC = ctx.scene->colliders.find(id); itC != ctx.scene->colliders.end()) {
+    else if (auto itC = scx.scene->colliders.find(id); itC != scx.scene->colliders.end()) {
         he = { itC->second.halfExtents.x * scaleAbs.x,
                itC->second.halfExtents.y * scaleAbs.y };
         offset = itC->second.offset;
@@ -758,9 +730,7 @@ bool ViewportPanel::IconButtonSelect(bool active) {
 bool ViewportPanel::IconButtonPan(bool active) {
     const float h = 28.f;
     if (m_IconPanOK) {
-        return IconButtonFromTexture("##btn_pan", m_IcoPan, h,
-            "Arrastrar (2)",
-            active);
+        return IconButtonFromTexture("##btn_pan", m_IcoPan, h, "Arrastrar (2)", active);
     }
     else {
         bool pressed = ImGui::Button("Pan", ImVec2(44, h));
@@ -773,8 +743,7 @@ bool ViewportPanel::IconButtonPan(bool active) {
 bool ViewportPanel::IconButtonRotate(bool active) {
     const float h = 28.f;
     if (m_IconRotateOK) {
-        return IconButtonFromTexture("##btn_rotate", m_IcoRotate, h,
-            "Rotar (3)", active);
+        return IconButtonFromTexture("##btn_rotate", m_IcoRotate, h, "Rotar (3)", active);
     }
     else {
         bool pressed = ImGui::Button("Rotate", ImVec2(64, h));
@@ -803,16 +772,13 @@ void ViewportPanel::AppendLog(const std::string& line) {
 }
 
 void ViewportPanel::DrawConsole(float height) {
-    // 🎨 Colores: header = #D1D1D1, contenido = #E3E3E3
-    const ImVec4 kHeaderBg = ImVec4(209.0f / 255.0f, 209.0f / 255.0f, 209.0f / 255.0f, 1.0f); // imagen
-    const ImVec4 kContentBg = ImVec4(227.0f / 255.0f, 227.0f / 255.0f, 227.0f / 255.0f, 1.0f); // un poco más claro
+    const ImVec4 kHeaderBg = ImVec4(209.0f / 255.0f, 209.0f / 255.0f, 209.0f / 255.0f, 1.0f);
+    const ImVec4 kContentBg = ImVec4(227.0f / 255.0f, 227.0f / 255.0f, 227.0f / 255.0f, 1.0f);
 
-    // Child contenedor (header + scroller) con fondo de header
     ImGui::PushStyleColor(ImGuiCol_ChildBg, kHeaderBg);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
     ImGui::BeginChild("##console", ImVec2(0, height), true, ImGuiWindowFlags_NoScrollbar);
 
-    // ───────────── Barra de acciones ─────────────
     if (ImGui::Button("Limpiar")) {
         s_Log.clear();
     }
@@ -821,8 +787,6 @@ void ViewportPanel::DrawConsole(float height) {
 
     ImGui::Separator();
 
-    // ───────────── Área de scroll ─────────────
-    // Fondo levemente más claro para diferenciar del header
     ImGui::PushStyleColor(ImGuiCol_ChildBg, kContentBg);
     ImGui::BeginChild("##console_scroller", ImVec2(0, -28), false, ImGuiWindowFlags_HorizontalScrollbar);
     for (const auto& line : s_Log) {
@@ -832,7 +796,7 @@ void ViewportPanel::DrawConsole(float height) {
         ImGui::SetScrollHereY(1.0f);
     }
     ImGui::EndChild();
-    ImGui::PopStyleColor(); // kContentBg
+    ImGui::PopStyleColor();
 
     ImGui::EndChild();
     ImGui::PopStyleVar();

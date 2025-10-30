@@ -4,10 +4,15 @@
 #include "Net/ApiClient.h"
 #include "Auth/TokenManager.h"
 
+// Contexto exclusivo del Editor: auth, APIs, selección, flags de ejecución, etc.
 struct EditorContext {
     std::shared_ptr<ApiClient> apiClient;
     std::shared_ptr<TokenManager> tokenManager;
-    Entity selected{}; // selección del editor
+    Entity selected{};
+
+    struct RuntimeState {
+        bool playing = false;
+    } runtime;
 
     static EditorContext& Get() {
         static EditorContext ctx;

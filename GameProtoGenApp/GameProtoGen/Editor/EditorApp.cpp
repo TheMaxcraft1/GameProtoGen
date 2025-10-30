@@ -1,9 +1,11 @@
+// GameProtoGenApp/GameProtoGen/Editor/EditorApp.cpp
 #include "Core/Application.h"
 #include "Core/SFMLWindow.h"
 #include "Panels/InspectorPanel.h"
 #include "Panels/ViewportPanel.h"
 #include "Panels/ChatPanel.h"
 #include "Runtime/SceneContext.h"
+#include "Runtime/EditorContext.h"
 #include "ECS/Scene.h"
 #include "ECS/Components.h"
 #include "ECS/SceneSerializer.h"
@@ -11,6 +13,7 @@
 #include <filesystem>
 #include <Systems/Renderer2D.h>
 #include <Auth/TokenManager.h>
+#include "Auth/OidcClient.h"
 #include "Editor/LauncherLayer.h"
 #include "Editor/ImGuiCoreLayer.h"
 #include "Core/Log.h"
@@ -23,7 +26,7 @@ static void EnsurePlayable(Scene& scene, Entity& outSelected) {
     // ¿Ya hay alguno?
     if (!scene.playerControllers.empty()) {
         playerId = scene.playerControllers.begin()->first;
-		Renderer2D::ClearTextureCache();
+        Renderer2D::ClearTextureCache();
     }
 
     // Si no hay ninguno, elegimos una entidad existente o creamos una nueva
@@ -74,6 +77,7 @@ static void EnsureGround(Scene& scene) {
 class EditorApp : public gp::Application {
 public:
     using gp::Application::Application;
+
     void Setup() {
         auto& win = static_cast<gp::SFMLWindow&>(Window());
         PushLayer(new ImGuiCoreLayer(win));  // <— en Hub también, pero sin dock
@@ -87,9 +91,14 @@ public:
         client->UseHttps(true);
         client->SetTimeouts(10, 180, 30);
 
-        auto& ctx = SceneContext::Get();
-        ctx.apiClient = client;
-        ctx.scene.reset(); // la escena se decide en el launcher
+        // Split de contextos:
+        // - EditorContext: auth, API, selección, flags de play
+        // - SceneContext: solo escena/cámara (runtime-friendly)
+        auto& edx = EditorContext::Get();
+        auto& scx = SceneContext::Get();
+
+        edx.apiClient = client;
+        scx.scene.reset(); // la escena se decide en el launcher
 
         // TokenManager precargado (si ya hay tokens guardados)
         OidcConfig cfg;
@@ -98,15 +107,15 @@ public:
         cfg.token_endpoint = "https://gameprotogenusers.ciamlogin.com/a9d06d78-e4d2-4909-93a7-e8fa6c09842f/oauth2/v2.0/token";
         cfg.scopes = { "openid","profile","offline_access","api://gameprotogen/access_as_user" };
 
-        ctx.tokenManager = std::make_shared<TokenManager>(cfg);
-        if (ctx.tokenManager->Load()) {
-            ctx.apiClient->SetTokenRefresher([mgr = ctx.tokenManager]() -> std::optional<std::string> {
+        edx.tokenManager = std::make_shared<TokenManager>(cfg);
+        if (edx.tokenManager->Load()) {
+            edx.apiClient->SetTokenRefresher([mgr = edx.tokenManager]() -> std::optional<std::string> {
                 return mgr->Refresh();
                 });
-            ctx.apiClient->SetPreflight([mgr = ctx.tokenManager]() { (void)mgr->EnsureFresh(); });
-            if (!ctx.tokenManager->AccessToken().empty())
-                ctx.apiClient->SetAccessToken(ctx.tokenManager->AccessToken());
-            ctx.tokenManager->EnsureFresh();
+            edx.apiClient->SetPreflight([mgr = edx.tokenManager]() { (void)mgr->EnsureFresh(); });
+            if (!edx.tokenManager->AccessToken().empty())
+                edx.apiClient->SetAccessToken(edx.tokenManager->AccessToken());
+            edx.tokenManager->EnsureFresh();
         }
 
         // Importante: arrancamos con el Launcher (no montes Viewport/Inspector/Chat acá)

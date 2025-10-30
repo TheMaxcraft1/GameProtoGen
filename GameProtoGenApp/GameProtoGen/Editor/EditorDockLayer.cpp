@@ -1,6 +1,7 @@
 #include "EditorDockLayer.h"
 
 #include "Runtime/SceneContext.h"
+#include "Runtime/EditorContext.h"
 #include "Editor/Panels/ViewportPanel.h"
 #include "Editor/Panels/InspectorPanel.h"
 #include "Editor/Panels/ChatPanel.h"
@@ -19,7 +20,7 @@
 #include <iomanip>
 #include "Core/Log.h"
 
-// ======================== Helpers (copiados de tu ImGuiLayer.cpp) ========================
+// ======================== Helpers ========================
 namespace {
     const char* kSavesDir = "Saves";
 
@@ -32,9 +33,10 @@ namespace {
         }
     }
 
+    // ---- AUTH: ahora usa EditorContext ----
     static void DoLoginInteractive() {
-        auto& ctx = SceneContext::Get();
-        if (!ctx.apiClient) {
+        auto& edx = EditorContext::Get();
+        if (!edx.apiClient) {
             Log::Info("[AUTH] ApiClient no inicializado");
             return;
         }
@@ -51,24 +53,26 @@ namespace {
             Log::Error(std::string("[AUTH] Error: ") + err);
             return;
         }
-        if (!ctx.tokenManager) ctx.tokenManager = std::make_shared<TokenManager>(cfg);
-        ctx.tokenManager->OnInteractiveLogin(*tokens);
+        if (!edx.tokenManager) edx.tokenManager = std::make_shared<TokenManager>(cfg);
+        edx.tokenManager->OnInteractiveLogin(*tokens);
 
-        ctx.apiClient->SetAccessToken(tokens->access_token);
-        ctx.apiClient->SetTokenRefresher([mgr = ctx.tokenManager]() -> std::optional<std::string> {
+        edx.apiClient->SetAccessToken(tokens->access_token);
+        edx.apiClient->SetTokenRefresher([mgr = edx.tokenManager]() -> std::optional<std::string> {
             return mgr->Refresh();
             });
-        ctx.apiClient->SetPreflight([mgr = ctx.tokenManager]() { (void)mgr->EnsureFresh(); });
+        edx.apiClient->SetPreflight([mgr = edx.tokenManager]() { (void)mgr->EnsureFresh(); });
 
         Log::Info("[AUTH] Login OK. access_token seteado en ApiClient.");
         if (!tokens->refresh_token.empty())
             Log::Info("[AUTH] refresh_token presente (persistido en Saves/tokens.json).");
     }
 
+    // ---- Post-load fixes: SceneContext para escena; EditorContext para selección ----
     static void FixSceneAfterLoad() {
-        auto& ctx = SceneContext::Get();
-        if (!ctx.scene) return;
-        auto& sc = *ctx.scene;
+        auto& scx = SceneContext::Get();
+        auto& edx = EditorContext::Get();
+        if (!scx.scene) return;
+        auto& sc = *scx.scene;
 
         bool hasStaticCollider = false;
         for (auto& [id, _] : sc.colliders) {
@@ -100,19 +104,19 @@ namespace {
             sc.playerControllers[chosen.id] = PlayerController{ 500.f, 900.f };
             playerId = chosen.id;
         }
-        ctx.selected = Entity{ playerId };
+        edx.selected = Entity{ playerId };
     }
 
     static void DoSave() {
         using namespace std::chrono;
         EnsureSavesDir();
-        auto& ctx = SceneContext::Get();
-        if (!ctx.scene) {
+        auto& scx = SceneContext::Get();
+        if (!scx.scene) {
             Log::Error("[SAVE] ERROR  escena nula");
             return;
         }
         auto path = std::filesystem::path(kSavesDir) / "scene.json";
-        bool ok = SceneSerializer::Save(*ctx.scene, path.string());
+        bool ok = SceneSerializer::Save(*scx.scene, path.string());
 
         auto now = system_clock::now();
         std::time_t t = system_clock::to_time_t(now);
@@ -131,13 +135,13 @@ namespace {
 
     static void DoLoad() {
         using namespace std::chrono;
-        auto& ctx = SceneContext::Get();
-        if (!ctx.scene) {
+        auto& scx = SceneContext::Get();
+        if (!scx.scene) {
             Log::Error("[LOAD] ERROR  escena nula");
             return;
         }
         auto path = std::filesystem::path(kSavesDir) / "scene.json";
-        bool ok = SceneSerializer::Load(*ctx.scene, path.string());
+        bool ok = SceneSerializer::Load(*scx.scene, path.string());
         FixSceneAfterLoad();
         Renderer2D::ClearTextureCache();
 
@@ -227,7 +231,7 @@ void EditorDockLayer::OnGuiRender() {
     ImGui::Begin("###MainDockHost", nullptr, hostFlags);
     ImGui::PopStyleVar(2);
 
-    const bool playing = SceneContext::Get().runtime.playing;
+    const bool playing = EditorContext::Get().runtime.playing;
 
     // ── Menú superior ───────────────────────────────────────────────────────
     if (ImGui::BeginMenuBar()) {
@@ -246,29 +250,29 @@ void EditorDockLayer::OnGuiRender() {
         }
 
         if (ImGui::BeginMenu("GameObjects", !playing)) {
+            auto& scx = SceneContext::Get();
+            auto& edx = EditorContext::Get();
+
             if (ImGui::MenuItem("Crear cuadrado", "Ctrl+N")) {
-                auto& ctx = SceneContext::Get();
-                if (ctx.scene) {
-                    const sf::Vector2f spawnPos = ctx.cameraCenter;
-                    Entity e = SpawnBox(*ctx.scene, spawnPos, { 100.f, 100.f });
-                    ctx.selected = e;
+                if (scx.scene) {
+                    const sf::Vector2f spawnPos = scx.cameraCenter;
+                    Entity e = SpawnBox(*scx.scene, spawnPos, { 100.f, 100.f });
+                    edx.selected = e;
                 }
             }
             if (ImGui::MenuItem("Crear plataforma", "Ctrl+N")) {
-                auto& ctx = SceneContext::Get();
-                if (ctx.scene) {
-                    const sf::Vector2f spawnPos = ctx.cameraCenter;
-                    Entity e = SpawnPlatform(*ctx.scene, spawnPos, { 200.f, 50.f });
-                    ctx.selected = e;
+                if (scx.scene) {
+                    const sf::Vector2f spawnPos = scx.cameraCenter;
+                    Entity e = SpawnPlatform(*scx.scene, spawnPos, { 200.f, 50.f });
+                    edx.selected = e;
                 }
             }
             {
-                auto& ctx = SceneContext::Get();
-                const bool canDup = (ctx.scene && ctx.selected && !IsPlayer(*ctx.scene, ctx.selected));
+                const bool canDup = (scx.scene && edx.selected && !IsPlayer(*scx.scene, edx.selected));
                 ImGui::BeginDisabled(!canDup);
                 if (ImGui::MenuItem("Duplicar seleccionado", "Ctrl+D")) {
-                    Entity newE = DuplicateEntity(*ctx.scene, ctx.selected, { 16.f,16.f });
-                    if (newE) ctx.selected = newE;
+                    Entity newE = DuplicateEntity(*scx.scene, edx.selected, { 16.f,16.f });
+                    if (newE) edx.selected = newE;
                 }
                 ImGui::EndDisabled();
             }
@@ -305,28 +309,28 @@ void EditorDockLayer::OnGuiRender() {
     // ── Atajos de teclado (solo si no está jugando) ────────────────────────
     ImGuiIO& io = ImGui::GetIO();
     if (!playing) {
+        auto& scx = SceneContext::Get();
+        auto& edx = EditorContext::Get();
+
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) DoSave();
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false)) DoLoad();
 
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_N, false)) {
-            auto& ctx = SceneContext::Get();
-            if (ctx.scene) {
-                Entity e = SpawnBox(*ctx.scene, ctx.cameraCenter, { 100.f, 100.f });
-                ctx.selected = e;
+            if (scx.scene) {
+                Entity e = SpawnBox(*scx.scene, scx.cameraCenter, { 100.f, 100.f });
+                edx.selected = e;
             }
         }
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D, false)) {
-            auto& ctx = SceneContext::Get();
-            if (ctx.scene && ctx.selected && !IsPlayer(*ctx.scene, ctx.selected)) {
-                Entity newE = DuplicateEntity(*ctx.scene, ctx.selected, { 16.f,16.f });
-                if (newE) ctx.selected = newE;
+            if (scx.scene && edx.selected && !IsPlayer(*scx.scene, edx.selected)) {
+                Entity newE = DuplicateEntity(*scx.scene, edx.selected, { 16.f,16.f });
+                if (newE) edx.selected = newE;
             }
         }
         if (ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {
-            auto& ctx = SceneContext::Get();
-            if (ctx.scene && ctx.selected && !IsPlayer(*ctx.scene, ctx.selected)) {
-                ctx.scene->DestroyEntity(ctx.selected);
-                ctx.selected = {};
+            if (scx.scene && edx.selected && !IsPlayer(*scx.scene, edx.selected)) {
+                scx.scene->DestroyEntity(edx.selected);
+                edx.selected = {};
             }
         }
     }
