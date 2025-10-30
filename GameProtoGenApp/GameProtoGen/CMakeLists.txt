@@ -9,6 +9,10 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+# Flags de build (ON por defecto para permitir "all-in-one" si querés)
+option(BUILD_EDITOR "Build the editor executable" ON)
+option(BUILD_PLAYER "Build the standalone player executable" ON)
+
 include(FetchContent)
 
 # --- Lua 5.4 ---
@@ -64,7 +68,7 @@ target_include_directories(tinyfiledialogs_lib PUBLIC ${tinyfiledialogs_SOURCE_D
 
 # --- cpr ---
 set(CPR_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(CPR_USE_SYSTEM_CURL OFF CACHE BOOL "" FORCE) # tu setting que no falla
+set(CPR_USE_SYSTEM_CURL OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(cpr
   GIT_REPOSITORY https://github.com/libcpr/cpr.git
   GIT_TAG 1.11.1
@@ -163,66 +167,98 @@ target_link_libraries(gp_runtime PUBLIC
 # ======================================
 #   EJECUTABLE EDITOR: GameProtoGen
 # ======================================
-add_executable(GameProtoGen
-    # Core del Editor (con ImGui)
-    Core/Application.cpp
+if (BUILD_EDITOR)
+  add_executable(GameProtoGen
+      # Core del Editor (con ImGui)
+      Core/Application.cpp
 
-    # Editor main
-    Editor/EditorApp.cpp
-    
-    # Panels y capas
-    Editor/Panels/ViewportPanel.cpp
-    Editor/Panels/InspectorPanel.cpp
-    Editor/Panels/ChatPanel.cpp
-    Editor/LauncherLayer.h
-    Editor/LauncherLayer.cpp
-    Editor/ImGuiCoreLayer.h
-    Editor/ImGuiCoreLayer.cpp
-    Editor/EditorDockLayer.h
-    Editor/EditorDockLayer.cpp
-    Editor/EditorLogSink.h
+      # Editor main
+      Editor/EditorApp.cpp
 
-    # Net/Auth (solo Editor)
-    Net/ApiClient.cpp
-    Auth/PKCE.h
-    Auth/PKCE.cpp
-    Auth/OidcClient.h
-    Auth/OidcClient.cpp
-    Auth/LoopbackServer.h
-    Auth/LoopbackServer.cpp
-    Auth/TokenManager.h
+      # Panels y capas
+      Editor/Panels/ViewportPanel.cpp
+      Editor/Panels/InspectorPanel.cpp
+      Editor/Panels/ChatPanel.cpp
+      Editor/LauncherLayer.h
+      Editor/LauncherLayer.cpp
+      Editor/ImGuiCoreLayer.h
+      Editor/ImGuiCoreLayer.cpp
+      Editor/EditorDockLayer.h
+      Editor/EditorDockLayer.cpp
+      Editor/EditorLogSink.h
 
-    # ImGui extra: std::string helpers (solo Editor)
-    ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
-)
+      # Net/Auth (solo Editor)
+      Net/ApiClient.cpp
+      Auth/PKCE.h
+      Auth/PKCE.cpp
+      Auth/OidcClient.h
+      Auth/OidcClient.cpp
+      Auth/LoopbackServer.h
+      Auth/LoopbackServer.cpp
+      Auth/TokenManager.h
 
-target_link_libraries(GameProtoGen PRIVATE
-  gp_runtime
-  ImGui-SFML::ImGui-SFML
-  nlohmann_json::nlohmann_json
-  cpr::cpr
-  tinyfiledialogs_lib
-  httplib::httplib
-  cppcodec
-)
+      # ImGui extra: std::string helpers (solo Editor)
+      ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
+  )
 
-target_include_directories(GameProtoGen PRIVATE
-    ${IMGUI_DIR}                 # para imgui.h
-    ${IMGUI_DIR}/misc/cpp        # para imgui_stdlib.h
-    ${cppcodec_SOURCE_DIR}
-)
+  target_link_libraries(GameProtoGen PRIVATE
+    gp_runtime
+    ImGui-SFML::ImGui-SFML
+    nlohmann_json::nlohmann_json
+    cpr::cpr
+    tinyfiledialogs_lib
+    httplib::httplib
+    cppcodec
+  )
 
-# Copiar Assets junto al .exe (Editor)
-add_custom_command(TARGET GameProtoGen POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_SOURCE_DIR}/Assets
-            $<TARGET_FILE_DIR:GameProtoGen>/Assets
-)
+  target_include_directories(GameProtoGen PRIVATE
+      ${IMGUI_DIR}                 # para imgui.h
+      ${IMGUI_DIR}/misc/cpp        # para imgui_stdlib.h
+      ${cppcodec_SOURCE_DIR}
+  )
 
-if (WIN32)
-  target_link_libraries(GameProtoGen PRIVATE comdlg32)
+  # Copiar Assets junto al .exe (Editor)
+  add_custom_command(TARGET GameProtoGen POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+              ${CMAKE_SOURCE_DIR}/Assets
+              $<TARGET_FILE_DIR:GameProtoGen>/Assets
+  )
+
+  if (WIN32)
+    target_link_libraries(GameProtoGen PRIVATE comdlg32)
+  endif()
+
+  if (MSVC)
+    add_compile_options("/utf-8")
+  endif()
 endif()
 
-if (MSVC)
-  add_compile_options("/utf-8")
+# ======================================
+#   EJECUTABLE PLAYER: GameProtoGenPlayer
+# ======================================
+if (BUILD_PLAYER)
+  add_executable(GameProtoGenPlayer
+      Runtime/PlayerMain.cpp
+  )
+
+  # Solo depende del runtime (NO ImGui, NO Auth, NO HTTP)
+  target_link_libraries(GameProtoGenPlayer PRIVATE
+    gp_runtime
+  )
+
+  target_include_directories(GameProtoGenPlayer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+  )
+
+  # Copiar Assets junto al .exe (Player)
+  add_custom_command(TARGET GameProtoGenPlayer POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+              ${CMAKE_SOURCE_DIR}/Assets
+              $<TARGET_FILE_DIR:GameProtoGenPlayer>/Assets
+  )
+
+  if (WIN32)
+    # Para ocultar consola en Player, descomentar:
+    # set_target_properties(GameProtoGenPlayer PROPERTIES WIN32_EXECUTABLE TRUE)
+  endif()
 endif()

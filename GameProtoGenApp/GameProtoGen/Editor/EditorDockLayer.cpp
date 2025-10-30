@@ -19,6 +19,8 @@
 #include <sstream>
 #include <iomanip>
 #include "Core/Log.h"
+#include <tinyfiledialogs.h>
+#include <filesystem>
 
 // ======================== Helpers ========================
 namespace {
@@ -210,6 +212,173 @@ namespace {
         }
         return dst;
     }
+
+#ifdef _WIN32 
+#ifndef WIN32_LEAN_AND_MEAN 
+#define WIN32_LEAN_AND_MEAN 
+#endif 
+#ifndef NOMINMAX 
+#define NOMINMAX 
+#endif 
+#include <windows.h> // MAX_PATH, GetModuleFileNameA 
+#endif
+#if __has_include(<tinyfiledialogs.h>) 
+#include <tinyfiledialogs.h> 
+#define GP_HAS_TINYFD 1 
+#else 
+#define GP_HAS_TINYFD 0 
+#endif
+
+    // Ruta del exe del Editor (carpeta bin actual)
+    static std::string GetExeDir() {
+#ifdef _WIN32
+        char buf[MAX_PATH];
+        GetModuleFileNameA(nullptr, buf, MAX_PATH);
+        std::filesystem::path p(buf);
+        return p.parent_path().string();
+#else
+        return std::filesystem::current_path().string();
+#endif
+    }
+
+    // Devuelve ruta al ejecutable del Player junto al Editor
+    static std::filesystem::path FindPlayerExe() {
+        std::filesystem::path binDir = GetExeDir();
+#ifdef _WIN32
+        std::filesystem::path candidate = binDir / "GameProtoGenPlayer.exe";
+#else
+        std::filesystem::path candidate = binDir / "GameProtoGenPlayer";
+#endif
+        if (std::filesystem::exists(candidate)) return candidate;
+        return {};
+    }
+
+    static void DoExportExecutable() {
+        auto& scx = SceneContext::Get();
+        if (!scx.scene) {
+            Log::Error("[EXPORT] ERROR: escena nula.");
+            return;
+        }
+
+        // Elegir carpeta destino
+        std::filesystem::path outDir;
+#if GP_HAS_TINYFD
+        if (const char* dst = tinyfd_selectFolderDialog("Elegí carpeta de exportación", nullptr)) {
+            outDir = dst;
+        }
+        else {
+            Log::Info("[EXPORT] Cancelado por el usuario.");
+            return;
+        }
+#else
+        // Fallback: Export/ junto al .exe si no está tinyfd
+        outDir = std::filesystem::path(GetExeDir()) / "Export";
+        {
+            std::error_code mkec;
+            std::filesystem::create_directories(outDir, mkec);
+            if (mkec) {
+                Log::Error(std::string("[EXPORT] ERROR creando carpeta de exportación: ") + mkec.message());
+                return;
+            }
+            Log::Info(std::string("[EXPORT] tinyfiledialogs no disponible. Exportando en: ") + outDir.string());
+        }
+#endif
+
+        // 1) Player junto al Editor
+        std::filesystem::path player = FindPlayerExe();
+        if (player.empty() || !std::filesystem::exists(player)) {
+            Log::Error("[EXPORT] No se encontró GameProtoGenPlayer junto al Editor. Compilá el target GameProtoGenPlayer.");
+            return;
+        }
+
+        // 2) Guardar escena
+        {
+            std::filesystem::path sceneOut = outDir / "scene.json";
+            bool ok = SceneSerializer::Save(*scx.scene, sceneOut.string());
+            if (!ok) {
+                Log::Error("[EXPORT] ERROR guardando scene.json");
+                return;
+            }
+        }
+
+        // 3) Copiar ejecutable del Player
+#ifdef _WIN32
+        std::filesystem::path playerOut = outDir / "GameProtoGenPlayer.exe";
+#else
+        std::filesystem::path playerOut = outDir / "GameProtoGenPlayer";
+#endif
+        {
+            std::error_code ec;
+            std::filesystem::copy_file(player, playerOut, std::filesystem::copy_options::overwrite_existing, ec);
+            if (ec) {
+                Log::Error(std::string("[EXPORT] ERROR copiando Player: ") + ec.message());
+                return;
+            }
+#ifndef _WIN32
+            // Permisos en *nix
+            std::filesystem::permissions(playerOut,
+                std::filesystem::perms::owner_exec | std::filesystem::perms::owner_read | std::filesystem::perms::owner_write |
+                std::filesystem::perms::group_exec | std::filesystem::perms::group_read |
+                std::filesystem::perms::others_exec | std::filesystem::perms::others_read,
+                std::filesystem::perm_options::add, ec);
+            if (ec) {
+                Log::Error(std::string("[EXPORT] ERROR set perms: ") + ec.message());
+            }
+#endif
+        }
+
+#ifdef _WIN32
+        // 4) Copiar TODAS las DLLs junto al Editor -> export
+        try {
+            const std::filesystem::path editorBin = GetExeDir();
+            for (auto& entry : std::filesystem::directory_iterator(editorBin)) {
+                if (!entry.is_regular_file()) continue;
+                auto ext = entry.path().extension().string();
+                if (!ext.empty() && _stricmp(ext.c_str(), ".dll") == 0) {
+                    std::error_code ec;
+                    std::filesystem::copy_file(
+                        entry.path(),
+                        outDir / entry.path().filename(),
+                        std::filesystem::copy_options::overwrite_existing, ec);
+                    if (ec) {
+                        Log::Error(std::string("[EXPORT] ERROR copiando DLL: ")
+                            + entry.path().filename().string() + " -> " + ec.message());
+                    }
+                }
+            }
+        }
+        catch (const std::exception& e) {
+            Log::Error(std::string("[EXPORT] Excepción copiando DLLs: ") + e.what());
+        }
+#endif
+
+        // 5) Copiar Assets
+        {
+            std::filesystem::path assetsSrc = std::filesystem::path(GetExeDir()) / "Assets";
+            std::filesystem::path assetsDst = outDir / "Assets";
+            if (std::filesystem::exists(assetsSrc)) {
+                std::error_code ec;
+                std::filesystem::create_directories(assetsDst, ec);
+                if (ec) {
+                    Log::Error(std::string("[EXPORT] ERROR creando Assets destino: ") + ec.message());
+                    return;
+                }
+                std::filesystem::copy(assetsSrc, assetsDst,
+                    std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
+                if (ec) {
+                    Log::Error(std::string("[EXPORT] ERROR copiando Assets: ") + ec.message());
+                    return;
+                }
+            }
+            else {
+                Log::Info("[EXPORT] No hay carpeta Assets junto al editor. Se exporta sin Assets.");
+            }
+        }
+
+        // 6) Mensaje final
+        Log::Info(std::string("[EXPORT] OK: carpeta lista en  ") + outDir.string());
+        Log::Info("           Para correr, ejecutá GameProtoGenPlayer (toma scene.json local).");
+    }
 } // namespace
 // ====================== Fin Helpers ======================
 
@@ -238,6 +407,10 @@ void EditorDockLayer::OnGuiRender() {
         if (ImGui::BeginMenu("Proyecto", !playing)) {
             if (ImGui::MenuItem("Guardar", "Ctrl+S")) DoSave();
             if (ImGui::MenuItem("Cargar", "Ctrl+O")) DoLoad();
+            ImGui::Separator();
+            if (ImGui::MenuItem("Exportar ejecutable…")) {
+                DoExportExecutable();
+            }
             ImGui::Separator();
             if (ImGui::MenuItem("Iniciar sesión…")) {
                 DoLoginInteractive();
