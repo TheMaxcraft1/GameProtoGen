@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <sstream>
 #include <iomanip>
+#include "Core/Log.h"
 
 // ======================== Helpers (copiados de tu ImGuiLayer.cpp) ========================
 namespace {
@@ -27,14 +28,14 @@ namespace {
         std::error_code ec;
         std::filesystem::create_directories(p, ec);
         if (ec) {
-            ViewportPanel::AppendLog(std::string("[SAVE] ERROR creando carpeta: ") + ec.message());
+            Log::Error(std::string("[SAVE] ERROR creando carpeta: ") + ec.message());
         }
     }
 
     static void DoLoginInteractive() {
         auto& ctx = SceneContext::Get();
         if (!ctx.apiClient) {
-            ViewportPanel::AppendLog("[AUTH] ApiClient no inicializado");
+            Log::Info("[AUTH] ApiClient no inicializado");
             return;
         }
         OidcConfig cfg;
@@ -47,7 +48,7 @@ namespace {
         std::string err;
         auto tokens = oidc.AcquireTokenInteractive(&err);
         if (!tokens) {
-            ViewportPanel::AppendLog(std::string("[AUTH] Error: ") + err);
+            Log::Error(std::string("[AUTH] Error: ") + err);
             return;
         }
         if (!ctx.tokenManager) ctx.tokenManager = std::make_shared<TokenManager>(cfg);
@@ -59,9 +60,9 @@ namespace {
             });
         ctx.apiClient->SetPreflight([mgr = ctx.tokenManager]() { (void)mgr->EnsureFresh(); });
 
-        ViewportPanel::AppendLog("[AUTH] Login OK. access_token seteado en ApiClient.");
+        Log::Info("[AUTH] Login OK. access_token seteado en ApiClient.");
         if (!tokens->refresh_token.empty())
-            ViewportPanel::AppendLog("[AUTH] refresh_token presente (persistido en Saves/tokens.json).");
+            Log::Info("[AUTH] refresh_token presente (persistido en Saves/tokens.json).");
     }
 
     static void FixSceneAfterLoad() {
@@ -107,7 +108,7 @@ namespace {
         EnsureSavesDir();
         auto& ctx = SceneContext::Get();
         if (!ctx.scene) {
-            ViewportPanel::AppendLog("[SAVE] ERROR  escena nula");
+            Log::Error("[SAVE] ERROR  escena nula");
             return;
         }
         auto path = std::filesystem::path(kSavesDir) / "scene.json";
@@ -125,14 +126,14 @@ namespace {
         oss << "[SAVE] " << (ok ? "OK" : "ERROR")
             << "  " << path.string() << "  "
             << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
-        ViewportPanel::AppendLog(oss.str());
+        Log::Info(oss.str());
     }
 
     static void DoLoad() {
         using namespace std::chrono;
         auto& ctx = SceneContext::Get();
         if (!ctx.scene) {
-            ViewportPanel::AppendLog("[LOAD] ERROR  escena nula");
+            Log::Error("[LOAD] ERROR  escena nula");
             return;
         }
         auto path = std::filesystem::path(kSavesDir) / "scene.json";
@@ -152,7 +153,7 @@ namespace {
         oss << "[LOAD] " << (ok ? "OK" : "ERROR")
             << "  " << path.string() << "  "
             << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
-        ViewportPanel::AppendLog(oss.str());
+        Log::Info(oss.str());
     }
 
     static Entity SpawnBox(Scene& scene,

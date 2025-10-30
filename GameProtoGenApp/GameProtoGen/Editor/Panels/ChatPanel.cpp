@@ -17,6 +17,7 @@
 #include <filesystem>
 #include "ViewportPanel.h"
 #include "Systems/Renderer2D.h"
+#include "Core/Log.h"
 
 using json = nlohmann::json;
 
@@ -226,7 +227,7 @@ void ChatPanel::OnGuiRender() {
                     const nlohmann::json& root = *res.data;
                     const std::string kind = root.value("kind", "");
 
-                    ViewportPanel::AppendLog("[DBG]: " + kind);
+                    Log::Info("[DBG]: " + kind);
 
                     if (kind == "ops") {
                         OpCounts c = ApplyOpsFromJson(root);
@@ -250,11 +251,11 @@ void ChatPanel::OnGuiRender() {
                         const std::string outPath = "Assets/Generated/" + safeName;
                         if (!data.empty() && SaveBase64ToFile(data, outPath)) {
                             typingBubble.text = std::string("Imagen guardada en:\n") + std::filesystem::absolute(outPath).string();
-                            ViewportPanel::AppendLog(std::string("[ASSET] Guardado: ") + outPath);
+                            Log::Info(std::string("[ASSET] Guardado: ") + outPath);
                         }
                         else {
                             typingBubble.text = "No pude guardar la imagen (payload incompleto o base64 inválido).";
-                            ViewportPanel::AppendLog("[ASSET] ERROR al guardar la imagen.");
+                            Log::Error("[ASSET] ERROR al guardar la imagen.");
                         }
                     }
                     else if (kind == "script") {
@@ -273,11 +274,11 @@ void ChatPanel::OnGuiRender() {
                             typingBubble.text = std::string("Script guardado en:\n")
                                 + std::filesystem::absolute(outPath).string()
                                 + "\n(No asignado a ninguna entidad.)";
-                            ViewportPanel::AppendLog(std::string("[SCRIPT] Guardado: ") + outPath);
+                            Log::Info(std::string("[SCRIPT] Guardado: ") + outPath);
                         }
                         else {
                             typingBubble.text = "No pude guardar el script (payload vacío o error de escritura).";
-                            ViewportPanel::AppendLog("[SCRIPT] ERROR al guardar script.");
+                            Log::Error("[SCRIPT] ERROR al guardar script.");
                         }
                     }
                     else if (kind == "bundle") {
@@ -298,10 +299,10 @@ void ChatPanel::OnGuiRender() {
                                     }
                                     const std::string outPath = "Assets/Generated/" + safeName;
                                     if (!data.empty() && SaveBase64ToFile(data, outPath)) {
-                                        ViewportPanel::AppendLog(std::string("[ASSET] Guardado: ") + outPath);
+                                        Log::Info(std::string("[ASSET] Guardado: ") + outPath);
                                     }
                                     else {
-                                        ViewportPanel::AppendLog("[ASSET] ERROR al guardar: " + outPath);
+                                        Log::Error("[ASSET] ERROR al guardar: " + outPath);
                                     }
                                 }
                                 if (ik == "script") {
@@ -313,7 +314,7 @@ void ChatPanel::OnGuiRender() {
                                     }
                                     const std::string outPath = "Assets/Scripts/" + safeName;
                                     if (!code.empty() && SaveTextToFile(outPath, code)) {
-                                        ViewportPanel::AppendLog(std::string("[SCRIPT] Guardado: ") + outPath);
+                                        Log::Info(std::string("[SCRIPT] Guardado: ") + outPath);
                                         // Asignación automática (misma regla que arriba)
                                         auto& ctx = SceneContext::Get();
                                         EntityID target = 0;
@@ -336,7 +337,7 @@ void ChatPanel::OnGuiRender() {
                                         }
                                     }
                                     else {
-                                        ViewportPanel::AppendLog("[SCRIPT] ERROR al guardar (bundle).");
+                                        Log::Error("[SCRIPT] ERROR al guardar (bundle).");
                                     }
                                 }
                             }
@@ -554,10 +555,10 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
         if (!data.empty()) {
             std::string outPath = "Assets/Generated/" + fname;
             if (SaveBase64ToFile(data, outPath)) {
-                ViewportPanel::AppendLog("[ASSET] Guardada imagen: " + outPath);
+                Log::Info("[ASSET] Guardada imagen: " + outPath);
             }
             else {
-                ViewportPanel::AppendLog("[ASSET] ERROR al guardar: " + outPath);
+                Log::Error("[ASSET] ERROR al guardar: " + outPath);
             }
         }
         return counts; // no hay ops

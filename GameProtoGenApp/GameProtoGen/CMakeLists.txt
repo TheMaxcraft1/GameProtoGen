@@ -128,6 +128,8 @@ FetchContent_MakeAvailable(picosha2)
 add_executable(GameProtoGen
     Core/Application.cpp
     Core/SFMLWindow.cpp
+    Core/Log.h
+    Core/Log.cpp
 
     # ECS
     ECS/Scene.cpp
@@ -151,6 +153,7 @@ add_executable(GameProtoGen
     Editor/ImGuiCoreLayer.cpp
     Editor/EditorDockLayer.h
     Editor/EditorDockLayer.cpp
+    Editor/EditorLogSink.h
 
     # Net
     Net/ApiClient.cpp

@@ -13,6 +13,8 @@
 #include <Auth/TokenManager.h>
 #include "Editor/LauncherLayer.h"
 #include "Editor/ImGuiCoreLayer.h"
+#include "Core/Log.h"
+#include "Editor/EditorLogSink.h"
 
 // Helper: asegurar que hay un jugador “jugable”
 static void EnsurePlayable(Scene& scene, Entity& outSelected) {
@@ -75,6 +77,9 @@ public:
     void Setup() {
         auto& win = static_cast<gp::SFMLWindow&>(Window());
         PushLayer(new ImGuiCoreLayer(win));  // <— en Hub también, pero sin dock
+
+        static ImGuiConsoleSink s_sink;
+        Log::SetSink(&s_sink);
 
         // ApiClient (HTTPS con tu backend en 7223)
         auto client = std::make_shared<ApiClient>("https://localhost:7223");
