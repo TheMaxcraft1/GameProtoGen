@@ -1,8 +1,8 @@
 #include "ScriptSystem.h"
 #include <fstream>
 #include <sstream>
+#include "Core/Log.h"
 #include <filesystem>
-#include "Editor/Panels/ViewportPanel.h"
 
 using Systems::ScriptSystem;
 
@@ -38,20 +38,20 @@ void ScriptSystem::Update(Scene& scene, float dt) {
         std::string err;
         if (!sc.loaded) {
             if (!vm.RunFor(id, code, sc.path.empty() ? "<inline>" : sc.path, err)) {
-                ViewportPanel::AppendLog(std::string("[SCRIPT] Error run: ") + err);
+                Log::Error(std::string("[SCRIPT] Error run: ") + err);
                 continue;
             }
             if (!vm.CallOnSpawn(id, err)) {
-                ViewportPanel::AppendLog(std::string("[SCRIPT] Error on_spawn: ") + err);
+                Log::Error(std::string("[SCRIPT] Error on_spawn: ") + err);
             }
             else {
-                ViewportPanel::AppendLog("[SCRIPT] on_spawn OK id=" + std::to_string(id));
+                Log::Info("[SCRIPT] on_spawn OK id=" + std::to_string(id));
             }
             sc.loaded = true;
         }
 
         if (!vm.CallOnUpdate(id, dt, err)) {
-            ViewportPanel::AppendLog(std::string("[SCRIPT] Error on_update: ") + err);
+            Log::Error(std::string("[SCRIPT] Error on_update: ") + err);
         }
     }
 }
