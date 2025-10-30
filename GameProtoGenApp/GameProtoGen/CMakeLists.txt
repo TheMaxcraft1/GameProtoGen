@@ -64,7 +64,7 @@ target_include_directories(tinyfiledialogs_lib PUBLIC ${tinyfiledialogs_SOURCE_D
 
 # --- cpr ---
 set(CPR_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(CPR_USE_SYSTEM_CURL OFF CACHE BOOL "" FORCE)
+set(CPR_USE_SYSTEM_CURL OFF CACHE BOOL "" FORCE) # tu setting que no falla
 FetchContent_Declare(cpr
   GIT_REPOSITORY https://github.com/libcpr/cpr.git
   GIT_TAG 1.11.1
@@ -96,37 +96,35 @@ FetchContent_Declare(cpp-httplib
 )
 FetchContent_MakeAvailable(cpp-httplib) # target: httplib::httplib
 
-# --- cppcodec (no tiene CMake; headers en <repo>/cppcodec/*.hpp) ---
+# --- cppcodec (INTERFACE) ---
 FetchContent_Declare(cppcodec
   GIT_REPOSITORY https://github.com/tplgy/cppcodec.git
   GIT_TAG v0.2
 )
-
 FetchContent_GetProperties(cppcodec)
 if (NOT cppcodec_POPULATED)
   FetchContent_Populate(cppcodec)
   if (NOT TARGET cppcodec)
     add_library(cppcodec INTERFACE)
-    # OJO: headers están en ${cppcodec_SOURCE_DIR}/cppcodec/...
     target_include_directories(cppcodec INTERFACE ${cppcodec_SOURCE_DIR})
   endif()
 endif()
-
-# (Opcional) fallá temprano si el header no existe
 if (NOT EXISTS "${cppcodec_SOURCE_DIR}/cppcodec/base64_url_unpadded.hpp")
   message(FATAL_ERROR "No se encontró ${cppcodec_SOURCE_DIR}/cppcodec/base64_url_unpadded.hpp")
 endif()
 
-# picosha2 (header-only SHA256)
+# picosha2 (header-only)
 FetchContent_Declare(picosha2
   GIT_REPOSITORY https://github.com/okdshin/PicoSHA2.git
   GIT_TAG master
 )
 FetchContent_MakeAvailable(picosha2)
 
-# ---------- Ejecutable ----------
-add_executable(GameProtoGen
-    Core/Application.cpp
+# ===============================
+#   LIBRERÍA RUNTIME (sin ImGui)
+# ===============================
+add_library(gp_runtime STATIC
+    # Core (sin Application.cpp)
     Core/SFMLWindow.cpp
     Core/Log.h
     Core/Log.cpp
@@ -141,9 +139,38 @@ add_executable(GameProtoGen
     Systems/ScriptVM.cpp
     Systems/ScriptSystem.cpp
 
-    # Editor
+    # Runtime
+    Runtime/GameRunner.cpp
+    Runtime/GameRunner.h
+    Runtime/EditorContext.h
+    Runtime/SceneContext.h
+)
+
+target_include_directories(gp_runtime PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${sol2_SOURCE_DIR}/include
+    ${picosha2_SOURCE_DIR}
+)
+
+target_link_libraries(gp_runtime PUBLIC
+  SFML::Graphics
+  SFML::Window
+  SFML::System
+  nlohmann_json::nlohmann_json
+  lua_static
+)
+
+# ======================================
+#   EJECUTABLE EDITOR: GameProtoGen
+# ======================================
+add_executable(GameProtoGen
+    # Core del Editor (con ImGui)
+    Core/Application.cpp
+
+    # Editor main
     Editor/EditorApp.cpp
     
+    # Panels y capas
     Editor/Panels/ViewportPanel.cpp
     Editor/Panels/InspectorPanel.cpp
     Editor/Panels/ChatPanel.cpp
@@ -155,10 +182,8 @@ add_executable(GameProtoGen
     Editor/EditorDockLayer.cpp
     Editor/EditorLogSink.h
 
-    # Net
+    # Net/Auth (solo Editor)
     Net/ApiClient.cpp
-
-    # Auth
     Auth/PKCE.h
     Auth/PKCE.cpp
     Auth/OidcClient.h
@@ -167,42 +192,27 @@ add_executable(GameProtoGen
     Auth/LoopbackServer.cpp
     Auth/TokenManager.h
 
-    Runtime/GameRunner.cpp
-    Runtime/GameRunner.h
-    Runtime/EditorContext.h
-    Runtime/SceneContext.h
-
-    # ImGui extra
-    ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
-)
-
-target_sources(GameProtoGen PRIVATE
+    # ImGui extra: std::string helpers (solo Editor)
     ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
 )
 
 target_link_libraries(GameProtoGen PRIVATE
-  SFML::Graphics
-  SFML::Window
-  SFML::System
+  gp_runtime
   ImGui-SFML::ImGui-SFML
   nlohmann_json::nlohmann_json
   cpr::cpr
-  lua_static
   tinyfiledialogs_lib
   httplib::httplib
-  cppcodec                 # <- acá linkeás el INTERFACE (propaga include)
+  cppcodec
 )
 
-target_include_directories(GameProtoGen PRIVATE 
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${IMGUI_DIR}/misc/cpp
-    ${sol2_SOURCE_DIR}/include
-    ${picosha2_SOURCE_DIR}           # para <picosha2.h>
-    # opcional, redundante porque ya viene por cppcodec INTERFACE:
-    ${cppcodec_SOURCE_DIR}    # para <cppcodec/base64_url_unpadded.hpp>
+target_include_directories(GameProtoGen PRIVATE
+    ${IMGUI_DIR}                 # para imgui.h
+    ${IMGUI_DIR}/misc/cpp        # para imgui_stdlib.h
+    ${cppcodec_SOURCE_DIR}
 )
 
-# Copiar Assets junto al .exe
+# Copiar Assets junto al .exe (Editor)
 add_custom_command(TARGET GameProtoGen POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             ${CMAKE_SOURCE_DIR}/Assets
