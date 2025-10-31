@@ -328,22 +328,62 @@ namespace {
         }
 
 #ifdef _WIN32
-        // 4) Copiar TODAS las DLLs junto al Editor -> export
+        // 4) Copiar DLLs excepto lo que sabemos que NO necesita el Player (blacklist)
         try {
+            // Prefijos a EXCLUIR (case-insensitive)
+            static const char* kDenyPrefixes[] = {
+                "ImGui-SFML",      // Editor UI
+                "imgui",           // Cualquier variante de imgui*.dll
+                "tinyfiledialogs", // Diálogos del editor
+                "cpr",             // HTTP del editor
+                "libcurl",         // Dependencia de cpr
+                "lua_static"       // El Player no debería depender de esto
+            };
+            // Nombres EXACTOS a EXCLUIR (por si aparecen con sufijos debug)
+            static const char* kDenyExact[] = {
+                "ImGui-SFML.dll", "ImGui-SFML_d.dll",
+                "tinyfiledialogs_lib.dll", "tinyfiledialogs_libd.dll",
+                "cpr.dll", "cprd.dll",
+                "libcurl.dll", "libcurl-d.dll",
+                "lua_static.dll", "lua_staticd.dll"
+            };
+
+            auto iequals = [](char a, char b) { return ::tolower(a) == ::tolower(b); };
+            auto starts_with_ci = [&](const std::string& s, const char* pfx) {
+                size_t n = std::strlen(pfx);
+                if (s.size() < n) return false;
+                for (size_t i = 0; i < n; ++i) if (!iequals(s[i], pfx[i])) return false;
+                return true;
+                };
+            auto equals_ci = [&](const std::string& a, const char* b) {
+                size_t n = std::strlen(b);
+                if (a.size() != n) return false;
+                for (size_t i = 0; i < n; ++i) if (!iequals(a[i], b[i])) return false;
+                return true;
+                };
+            auto is_denied = [&](const std::string& fname) {
+                for (auto* e : kDenyExact)    if (equals_ci(fname, e)) return true;
+                for (auto* p : kDenyPrefixes) if (starts_with_ci(fname, p)) return true;
+                return false;
+                };
+
             const std::filesystem::path editorBin = GetExeDir();
             for (auto& entry : std::filesystem::directory_iterator(editorBin)) {
                 if (!entry.is_regular_file()) continue;
-                auto ext = entry.path().extension().string();
-                if (!ext.empty() && _stricmp(ext.c_str(), ".dll") == 0) {
-                    std::error_code ec;
-                    std::filesystem::copy_file(
-                        entry.path(),
-                        outDir / entry.path().filename(),
-                        std::filesystem::copy_options::overwrite_existing, ec);
-                    if (ec) {
-                        Log::Error(std::string("[EXPORT] ERROR copiando DLL: ")
-                            + entry.path().filename().string() + " -> " + ec.message());
-                    }
+                const auto& p = entry.path();
+                const auto ext = p.extension().string();
+                if (_stricmp(ext.c_str(), ".dll") != 0) continue;
+
+                const auto fname = p.filename().string();
+                if (is_denied(fname)) continue; // saltar DLLs de editor
+
+                std::error_code ec;
+                std::filesystem::copy_file(
+                    p, outDir / p.filename(),
+                    std::filesystem::copy_options::overwrite_existing, ec);
+                if (ec) {
+                    Log::Error(std::string("[EXPORT] ERROR copiando DLL: ")
+                        + fname + " -> " + ec.message());
                 }
             }
         }
