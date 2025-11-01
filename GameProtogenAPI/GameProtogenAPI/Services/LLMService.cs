@@ -4,6 +4,7 @@ using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using OpenAI.Chat;
 using OpenAI.Images;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
 namespace GameProtogenAPI.Services
@@ -35,7 +36,8 @@ namespace GameProtogenAPI.Services
                 throw new InvalidOperationException("Falta AzureAI ApiKey (AzureAI:ApiKey o AZURE_OPENAI_API_KEY).");
 
             _kernel = Kernel.CreateBuilder()
-                .AddAzureAIInferenceChatCompletion("grok-4-fast-reasoning", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
+                //.AddAzureAIInferenceChatCompletion("grok-4-fast-reasoning", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
+                .AddAzureAIInferenceChatCompletion("phi-4-mini-reasoning", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
                 .Build();
         }
 
@@ -50,7 +52,15 @@ namespace GameProtogenAPI.Services
                 history.AddUserMessage(user);
 
                 var result = await chat.GetChatMessageContentAsync(history);
-                return result?.Content ?? string.Empty;
+                var content  = result?.Content ?? string.Empty;
+                content = Regex.Replace(
+                    content,
+                    @"<think\b[^>]*>.*?</think>",
+                    string.Empty,
+                    RegexOptions.IgnoreCase | RegexOptions.Singleline
+                ).Trim();
+
+                return content;
             }
             catch(Exception ex)
             {
