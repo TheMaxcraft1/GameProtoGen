@@ -124,6 +124,14 @@ FetchContent_Declare(picosha2
 )
 FetchContent_MakeAvailable(picosha2)
 
+# --- GoogleTest ---
+include(FetchContent)
+FetchContent_Declare(googletest
+  GIT_REPOSITORY https://github.com/google/googletest.git
+  GIT_TAG v1.15.2
+)
+FetchContent_MakeAvailable(googletest)
+
 # ===============================
 #   LIBRERÍA RUNTIME (sin ImGui)
 # ===============================
@@ -262,3 +270,23 @@ if (BUILD_PLAYER)
     # set_target_properties(GameProtoGenPlayer PROPERTIES WIN32_EXECUTABLE TRUE)
   endif()
 endif()
+
+# ===============================
+#   TESTS UNITARIOS (headless)
+# ===============================
+enable_testing()
+
+add_executable(gp_tests
+  Tests/test_collision.cpp
+  Tests/test_scriptvm.cpp
+  Tests/test_gamerunner.cpp
+  Tests/test_scene_serializer.cpp
+  Tests/test_apiclient.cpp
+)
+
+target_link_libraries(gp_tests PRIVATE
+  gp_runtime
+  GTest::gtest GTest::gtest_main
+)
+
+add_test(NAME gp_tests COMMAND gp_tests)
