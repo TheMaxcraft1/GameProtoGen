@@ -119,17 +119,47 @@ void LauncherLayer::DrawProjectPicker() {
         ImGui::TextDisabled("No existe la carpeta Saves.");
         return;
     }
-    bool any = false;
+
+    // Juntamos y ordenamos por nombre (sin extensión), case-insensitive
+    std::vector<std::filesystem::path> files;
     for (auto& p : directory_iterator("Saves")) {
         if (p.is_regular_file() && p.path().extension() == ".json") {
-            any = true;
-            bool selected = (m_selected == p.path().string());
-            if (ImGui::Selectable(p.path().filename().string().c_str(), selected)) {
-                m_selected = p.path().string();
-            }
+            files.push_back(p.path());
         }
     }
-    if (!any) ImGui::TextDisabled("No hay .json en Saves todavía.");
+    if (files.empty()) {
+        ImGui::TextDisabled("No hay proyectos todavía.");
+        return;
+    }
+
+    auto ci_less = [](const std::filesystem::path& a, const std::filesystem::path& b) {
+        std::string sa = a.stem().string();
+        std::string sb = b.stem().string();
+        std::transform(sa.begin(), sa.end(), sa.begin(), ::tolower);
+        std::transform(sb.begin(), sb.end(), sb.begin(), ::tolower);
+        return sa < sb;
+        };
+    std::sort(files.begin(), files.end(), ci_less);
+
+    bool any = false;
+    for (const auto& p : files) {
+        any = true;
+        const std::string full = p.string();              // con .json
+        const std::string name = p.stem().string();       // sin .json
+
+        bool selected = (m_selected == full);
+        if (ImGui::Selectable(name.c_str(), selected)) {
+            m_selected = full; // guardamos la ruta completa
+        }
+        // Tooltip con el nombre real por si querés ver la extensión
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("%s", p.filename().string().c_str());
+        }
+        // Doble click para abrir
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+            EnterEditor();
+        }
+    }
 }
 
 void LauncherLayer::SeedNewScene() {
@@ -151,22 +181,6 @@ void LauncherLayer::SeedNewScene() {
     s.sprites[ground.id] = Sprite{ {1600.f, 160.f}, sf::Color(60,60,70,255) };
     s.colliders[ground.id] = Collider{ {800.f, 80.f}, {0.f,0.f} };
 
-    // opcional: script en entidad 3
-    {
-        EntityID target = 3;
-        bool exists3 = false;
-        for (auto& ent : s.Entities()) if (ent.id == target) { exists3 = true; break; }
-        if (!exists3) {
-            Entity e3 = s.CreateEntityWithId(target);
-            s.transforms[e3.id] = Transform{ {800.f, 450.f}, {1.f,1.f}, 0.f };
-            s.sprites[e3.id] = Sprite{ {80.f,80.f}, sf::Color(255,128,0,255) };
-            s.colliders[e3.id] = Collider{ {40.f,40.f}, {0.f,0.f} };
-        }
-        auto& sc = s.scripts[target];
-        sc.path = "Assets/Scripts/mover.lua";
-        sc.inlineCode.clear();
-        sc.loaded = false;
-    }
 }
 
 void LauncherLayer::EnterEditor() {
