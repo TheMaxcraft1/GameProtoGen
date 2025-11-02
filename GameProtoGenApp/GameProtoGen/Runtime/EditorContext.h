@@ -13,6 +13,7 @@ struct EditorContext {
     struct RuntimeState {
         bool playing = false;
     } runtime;
+    bool requestSelectTool = false; // pedir pasar a herramienta Select
 
     static EditorContext& Get() {
         static EditorContext ctx;

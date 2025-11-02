@@ -710,7 +710,10 @@ void EditorDockLayer::OnGuiRender() {
                 ImGui::BeginDisabled(!canDup);
                 if (ImGui::MenuItem("Duplicar seleccionado", "Ctrl+D")) {
                     Entity newE = DuplicateEntity(*scx.scene, edx.selected, { 16.f,16.f });
-                    if (newE) edx.selected = newE;
+                    if (newE) {
+                        edx.selected = newE;
+                        edx.requestSelectTool = true;
+                    }
                 }
                 ImGui::EndDisabled();
             }
@@ -762,7 +765,10 @@ void EditorDockLayer::OnGuiRender() {
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D, false)) {
             if (scx.scene && edx.selected && !IsPlayer(*scx.scene, edx.selected)) {
                 Entity newE = DuplicateEntity(*scx.scene, edx.selected, { 16.f,16.f });
-                if (newE) edx.selected = newE;
+                if (newE) {
+                    edx.selected = newE;
+                    edx.requestSelectTool = true;
+                }
             }
         }
         if (ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {

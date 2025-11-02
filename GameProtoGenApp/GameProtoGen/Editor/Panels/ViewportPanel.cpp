@@ -80,6 +80,12 @@ void ViewportPanel::OnGuiRender() {
     auto& scx = SceneContext::Get();
     auto& edx = EditorContext::Get();
 
+    // Se usa cuando se duplica una entidad.
+    if (edx.requestSelectTool) {
+        m_Tool = Tool::Select;
+        edx.requestSelectTool = false;
+    }
+
     auto TogglePlay = [&]() {
         bool wasPlaying = m_Playing;
         m_Playing = !m_Playing;
