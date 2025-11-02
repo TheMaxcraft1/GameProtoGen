@@ -127,7 +127,7 @@ public:
 };
 
 int main() {
-    gp::WindowProps props{ "GameProtoGen + ImGui", 1600, 900, true };
+    gp::WindowProps props{ "Game Protogen", 1600, 900, true };
     EditorApp app(props);
     app.Setup();
     app.Run();

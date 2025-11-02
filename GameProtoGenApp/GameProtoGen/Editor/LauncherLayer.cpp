@@ -18,6 +18,9 @@
 #include <cctype>
 #include <cstdio>
 #include "Core/SFMLWindow.h"
+#include <imgui-SFML.h>
+#include <SFML/Graphics.hpp>   
+#include <Editor/EditorFonts.h>
 
 using std::filesystem::exists;
 using std::filesystem::directory_iterator;
@@ -82,6 +85,9 @@ bool LauncherLayer::TryAutoLogin() {
 void LauncherLayer::OnAttach() {
     EnsureSavesDir();
     m_loggedIn = TryAutoLogin();
+
+    m_LogoOK = m_LogoTex.loadFromFile("Internal/Brand/logo.png");
+    if (m_LogoOK) m_LogoTex.setSmooth(true);
 }
 
 void LauncherLayer::DoLoginInteractive() {
@@ -248,11 +254,66 @@ void LauncherLayer::OnGuiRender() {
     const float x = (availW > contentW) ? (availW - contentW) * 0.5f : 0.f;
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + x);
 
-    ImGui::BeginChild("##HubContent", ImVec2(contentW, 0), true, ImGuiWindowFlags_NoScrollbar);
+    ImGui::BeginChild("##HubContent", ImVec2(contentW, 0), false, ImGuiWindowFlags_NoScrollbar);
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(12, 0));
 
-    // --- Cabecera ---
-    ImGui::TextUnformatted("GameProtoGen — Hub");
-    ImGui::Separator();
+        const float logoH = 108.f;
+
+        // Calcular alto de textos (usando las fuentes si existen)
+        float titleH = EditorFonts::Title ? EditorFonts::Title->FontSize : ImGui::GetFontSize();
+        float h2H = EditorFonts::H2 ? EditorFonts::H2->FontSize : ImGui::GetFontSize();
+        float textBlockH = titleH + h2H + 4.0f; // +4 de respiro entre líneas
+
+        const float headerH = std::max(logoH, textBlockH) + 16.0f; // +padding
+
+        // Child sin scroll y con alto suficiente
+        ImGui::BeginChild("##Header",
+            ImVec2(0, headerH),
+            false,
+            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+        // ---- Logo a la izquierda
+        if (m_LogoOK) {
+            const auto sz = m_LogoTex.getSize();
+            ImVec2 imgSize(logoH, logoH);
+            if (sz.y != 0) {
+                float scale = logoH / static_cast<float>(sz.y);
+                imgSize.x = sz.x * scale;
+            }
+            ImGui::Image(m_LogoTex, imgSize);
+            ImGui::SameLine();
+        }
+
+        ImGui::BeginGroup();
+        {
+            // Offset vertical para centrar el bloque de textos con el logo
+            float yOff = (headerH - textBlockH) * 0.5f;
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + yOff);
+
+            // Título (negro)
+            if (EditorFonts::Title) ImGui::PushFont(EditorFonts::Title);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 0, 0, 1));
+            ImGui::TextUnformatted("Game Protogen");
+            ImGui::PopStyleColor();
+            if (EditorFonts::Title) ImGui::PopFont();
+
+            // Subtítulo (negro 75%)
+            if (EditorFonts::H2) ImGui::PushFont(EditorFonts::H2);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 0, 0, 0.75f));
+            ImGui::TextUnformatted("Hub");
+            ImGui::PopStyleColor();
+            if (EditorFonts::H2) ImGui::PopFont();
+        }
+        ImGui::EndGroup();
+
+        ImGui::EndChild();
+        ImGui::PopStyleVar(2);
+
+        ImGui::Separator();
+    }
+
 
     // --- Sesión ---
     ImGui::TextUnformatted("Sesión:");

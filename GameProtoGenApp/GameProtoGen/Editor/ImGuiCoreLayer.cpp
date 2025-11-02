@@ -18,6 +18,7 @@ void ImGuiCoreLayer::OnAttach() {
     EditorFonts::Regular = io.Fonts->AddFontFromFileTTF("Internal/Fonts/Roboto-Regular.ttf", 20.f, nullptr, ranges);
     EditorFonts::H2 = io.Fonts->AddFontFromFileTTF("Internal/Fonts/Roboto-Bold.ttf", 22.f, nullptr, ranges);
     EditorFonts::H1 = io.Fonts->AddFontFromFileTTF("Internal/Fonts/Roboto-Bold.ttf", 26.f, nullptr, ranges);
+    EditorFonts::Title = io.Fonts->AddFontFromFileTTF("Internal/Fonts/Roboto-Bold.ttf", 48.f, nullptr, ranges);
     io.FontDefault = EditorFonts::Regular;
     ImGui::SFML::UpdateFontTexture();
     ImGui::StyleColorsLight();

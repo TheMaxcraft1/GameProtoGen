@@ -1,6 +1,7 @@
 #pragma once
 #include "Core/Application.h"
 #include <string>
+#include <SFML/Graphics/Texture.hpp>
 
 // Forward decls
 namespace gp { class Application; }
@@ -16,6 +17,8 @@ private:
     bool m_newProjModal = false;
     char m_newProjName[128] = "NuevoProyecto";
     std::string m_newProjError;
+    sf::Texture m_LogoTex;
+    bool m_LogoOK = false;
 
     // Acciones
     void DoLoginInteractive();   // login + token manager + refresher
