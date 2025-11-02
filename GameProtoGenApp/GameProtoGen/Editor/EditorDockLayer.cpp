@@ -424,26 +424,50 @@ namespace {
 
     static Entity DuplicateEntity(Scene& scene, Entity src, const sf::Vector2f& offset = { 16.f, 16.f }) {
         if (!src) return {};
-        if (IsPlayer(scene, src)) return {};
+        if (IsPlayer(scene, src)) return {}; // no duplicar al jugador
+
         Entity dst = scene.CreateEntity();
 
+        // Transform
         if (auto it = scene.transforms.find(src.id); it != scene.transforms.end()) {
             Transform t = it->second;
             t.position += offset;
             scene.transforms[dst.id] = t;
         }
+
+        // Sprite (geom/color etc.)
         if (auto it = scene.sprites.find(src.id); it != scene.sprites.end()) {
             scene.sprites[dst.id] = it->second;
         }
+
+        // Collider
         if (auto it = scene.colliders.find(src.id); it != scene.colliders.end()) {
             scene.colliders[dst.id] = it->second;
         }
+
+        // Physics (reset estado volátil)
         if (auto it = scene.physics.find(src.id); it != scene.physics.end()) {
             Physics2D p = it->second;
             p.velocity = { 0.f, 0.f };
             p.onGround = false;
             scene.physics[dst.id] = p;
         }
+
+        // 🔹 Texture (conserva el path para que apunte al mismo asset)
+        //    Esto NO copia archivos; solo duplica el componente con su ruta.
+        if (auto it = scene.textures.find(src.id); it != scene.textures.end()) {
+            scene.textures[dst.id] = it->second;
+            // opcional: si tu struct tiene campos de handle/cached, podrías invalidarlos aquí
+            // scene.textures[dst.id].handle = nullptr; // si aplica a tu implementación
+        }
+
+        // 🔹 Script (respeta path o inlineCode; fuerza reload)
+        if (auto it = scene.scripts.find(src.id); it != scene.scripts.end()) {
+            Script sc = it->second;      // copia completa (path e inlineCode)
+            sc.loaded = false;           // asegura que el runtime/editor lo recargue
+            scene.scripts[dst.id] = std::move(sc);
+        }
+
         return dst;
     }
 
