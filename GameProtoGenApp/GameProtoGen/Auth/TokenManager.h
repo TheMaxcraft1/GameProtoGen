@@ -19,7 +19,7 @@ public:
     };
 
     // cfg: endpoints + client_id + scopes (de tu OIDC)
-    explicit TokenManager(OidcConfig cfg, std::string savePath = "Saves/tokens.json")
+    explicit TokenManager(OidcConfig cfg, std::string savePath = "Internal/tokens.json")
         : m_cfg(std::move(cfg)), m_path(std::move(savePath)) {
     }
 

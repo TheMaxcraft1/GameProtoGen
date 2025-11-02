@@ -22,12 +22,12 @@ ViewportPanel::ViewportPanel() {}
 
 void ViewportPanel::OnAttach() {
     // Intentar cargar iconos desde Assets/Icons
-    m_IconPlayOK = m_IcoPlay.loadFromFile("Assets/Icons/play.png");
-    m_IconPauseOK = m_IcoPause.loadFromFile("Assets/Icons/pause.png");
-    m_IconSelectOK = m_IcoSelect.loadFromFile("Assets/Icons/select.png");
-    m_IconPanOK = m_IcoPan.loadFromFile("Assets/Icons/pan.png");
-    m_IconRotateOK = m_IcoRotate.loadFromFile("Assets/Icons/rotate.png");
-    m_IconScaleOK = m_IcoScale.loadFromFile("Assets/Icons/scale.png");
+    m_IconPlayOK = m_IcoPlay.loadFromFile("Internal/Icons/play.png");
+    m_IconPauseOK = m_IcoPause.loadFromFile("Internal/Icons/pause.png");
+    m_IconSelectOK = m_IcoSelect.loadFromFile("Internal/Icons/select.png");
+    m_IconPanOK = m_IcoPan.loadFromFile("Internal/Icons/pan.png");
+    m_IconRotateOK = m_IcoRotate.loadFromFile("Internal/Icons/rotate.png");
+    m_IconScaleOK = m_IcoScale.loadFromFile("Internal/Icons/scale.png");
 
     m_IcoPlay.setSmooth(true);
     m_IcoPause.setSmooth(true);

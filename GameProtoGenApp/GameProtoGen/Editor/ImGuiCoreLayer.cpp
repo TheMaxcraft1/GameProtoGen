@@ -15,9 +15,9 @@ void ImGuiCoreLayer::OnAttach() {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;               // docking habilitado globalmente
     const ImWchar* ranges = io.Fonts->GetGlyphRangesDefault();
-    EditorFonts::Regular = io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-Regular.ttf", 20.f, nullptr, ranges);
-    EditorFonts::H2 = io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-Bold.ttf", 22.f, nullptr, ranges);
-    EditorFonts::H1 = io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-Bold.ttf", 26.f, nullptr, ranges);
+    EditorFonts::Regular = io.Fonts->AddFontFromFileTTF("Internal/Fonts/Roboto-Regular.ttf", 20.f, nullptr, ranges);
+    EditorFonts::H2 = io.Fonts->AddFontFromFileTTF("Internal/Fonts/Roboto-Bold.ttf", 22.f, nullptr, ranges);
+    EditorFonts::H1 = io.Fonts->AddFontFromFileTTF("Internal/Fonts/Roboto-Bold.ttf", 26.f, nullptr, ranges);
     io.FontDefault = EditorFonts::Regular;
     ImGui::SFML::UpdateFontTexture();
     ImGui::StyleColorsLight();

@@ -225,12 +225,19 @@ if (BUILD_EDITOR)
       ${cppcodec_SOURCE_DIR}
   )
 
-  # Copiar Assets junto al .exe (Editor)
-  add_custom_command(TARGET GameProtoGen POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_directory
-              ${CMAKE_SOURCE_DIR}/Assets
-              $<TARGET_FILE_DIR:GameProtoGen>/Assets
-  )
+# Copiar Assets junto al .exe (Editor)
+add_custom_command(TARGET GameProtoGen POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/Assets
+            $<TARGET_FILE_DIR:GameProtoGen>/Assets
+)
+
+# ⬇️ NUEVO: Copiar Internal junto al .exe (Editor)
+add_custom_command(TARGET GameProtoGen POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/Internal
+            $<TARGET_FILE_DIR:GameProtoGen>/Internal
+)
 
   if (WIN32)
     target_link_libraries(GameProtoGen PRIVATE comdlg32)
