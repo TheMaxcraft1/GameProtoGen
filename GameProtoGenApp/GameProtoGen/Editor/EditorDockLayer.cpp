@@ -11,28 +11,256 @@
 #include "Auth/OidcClient.h"
 #include "Net/ApiClient.h"
 #include "Auth/TokenManager.h"
+#include "Core/Log.h"
+#include "Core/Application.h"
+
+#include <algorithm>
+#include <fstream>
+#include <filesystem>
+#include <unordered_set>
+#include <optional>
+#include <sstream>
+#include <iomanip>
 
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <SFML/Graphics/Color.hpp>
-#include <filesystem>
-#include <sstream>
-#include <iomanip>
-#include "Core/Log.h"
-#include <tinyfiledialogs.h>
-#include <filesystem>
+
+#include <nlohmann/json.hpp>
 
 // ======================== Helpers ========================
 namespace {
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h> // MAX_PATH, GetModuleFileNameA
+#endif
+
+#if __has_include(<tinyfiledialogs.h>)
+#include <tinyfiledialogs.h>
+#define GP_HAS_TINYFD 1
+#else
+#define GP_HAS_TINYFD 0
+#endif
+
+    // Ruta del exe del Editor (carpeta bin actual)
+    static std::string GetExeDir() {
+#ifdef _WIN32
+        char buf[MAX_PATH];
+        GetModuleFileNameA(nullptr, buf, MAX_PATH);
+        std::filesystem::path p(buf);
+        return p.parent_path().string();
+#else
+        return std::filesystem::current_path().string();
+#endif
+    }
+
+    // Busca la carpeta Assets empezando al lado del .exe y subiendo hasta 3 niveles
+    static std::filesystem::path FindAssetsRoot() {
+        std::error_code ec;
+
+        // 1) Al lado del exe
+        std::filesystem::path bin = GetExeDir();
+        std::filesystem::path p = bin / "Assets";
+        if (std::filesystem::exists(p, ec)) return p;
+
+        // 2) Subir hasta 3 niveles (útil si estás en out/build/.../bin)
+        std::filesystem::path cur = bin;
+        for (int i = 0; i < 3; ++i) {
+            cur = cur.parent_path();
+            if (cur.empty()) break;
+            p = cur / "Assets";
+            if (std::filesystem::exists(p, ec)) return p;
+        }
+
+        // 3) CWD/Assets último intento
+        p = std::filesystem::current_path() / "Assets";
+        if (std::filesystem::exists(p, ec)) return p;
+
+        // 4) Si nada, devolvemos al lado del exe (aunque no exista)
+        return std::filesystem::path(GetExeDir()) / "Assets";
+    }
+
+    // Cachea la ruta detectada de Assets
+    static std::filesystem::path GetAssetsRoot() {
+        static std::filesystem::path cached = FindAssetsRoot();
+        return cached;
+    }
+
+    static void LogAssetsRoot() {
+        auto r = GetAssetsRoot();
+        Log::Info(std::string("[EXPORT] AssetsRoot = ") + r.string());
+    }
+
+    // Dada una ruta raw (relativa/absoluta), intenta resolver a una absoluta existente
+    static std::optional<std::filesystem::path> ResolveAssetPath(const std::filesystem::path& raw) {
+        std::error_code ec;
+        if (raw.empty()) return std::nullopt;
+
+        // 1) Si ya es absoluta y existe
+        if (raw.is_absolute() && std::filesystem::exists(raw, ec)) return raw;
+
+        // 2) Assets/<raw>
+        {
+            auto abs = GetAssetsRoot() / raw;
+            if (std::filesystem::exists(abs, ec)) return abs;
+        }
+
+        // 3) CWD/<raw>
+        {
+            auto abs = std::filesystem::current_path() / raw;
+            if (std::filesystem::exists(abs, ec)) return abs;
+        }
+
+        return std::nullopt;
+    }
+
+    // Normaliza y devuelve el subpath relativo a Assets si corresponde.
+    // Si el archivo no está dentro de Assets, retorna std::nullopt.
+    static std::optional<std::filesystem::path> RelToAssets(const std::filesystem::path& pAbs) {
+        std::error_code ec;
+        auto assets = std::filesystem::weakly_canonical(GetAssetsRoot(), ec);
+        auto abs = std::filesystem::weakly_canonical(pAbs, ec);
+        if (ec) return std::nullopt;
+
+        // ¿abs comienza con assets?
+        auto mismatch = std::mismatch(assets.begin(), assets.end(), abs.begin(), abs.end());
+        if (mismatch.first == assets.end()) {
+            return std::filesystem::relative(abs, assets, ec);
+        }
+        return std::nullopt;
+    }
+
+    struct AssetRef {
+        std::filesystem::path abs;     // ruta absoluta real
+        std::filesystem::path rel;     // ruta relativa dentro de Assets (ej: Textures/foo.png)
+        std::string reason;            // "texture" | "script" | "sprite"
+    };
+
+    // Recolecta texturas/scripts (y opcionalmente sprites con imagePath) referenciados en la escena, sólo si están bajo Assets/.
+    static std::vector<AssetRef> CollectUsedAssets(const Scene& scene) {
+        std::vector<AssetRef> out;
+        std::unordered_set<std::string> dedup;
+
+        auto try_add = [&](const std::filesystem::path& raw, const std::string& reason) {
+            auto absOpt = ResolveAssetPath(raw);
+            if (!absOpt) {
+                Log::Info(std::string("[EXPORT] skip (no existe): ") + raw.string());
+                return;
+            }
+            const auto& abs = *absOpt;
+
+            if (auto rel = RelToAssets(abs)) {
+                auto key = (rel->generic_string() + "|" + reason);
+                if (!dedup.insert(key).second) return;
+                Log::Info(std::string("[EXPORT] + ") + reason + "  " + rel->generic_string());
+                out.push_back(AssetRef{ abs, *rel, reason });
+            }
+            else {
+                Log::Info(std::string("[EXPORT] skip (fuera de Assets): ") + abs.string());
+            }
+            };
+
+        // 1) Texturas
+        for (const auto& [id, tex] : scene.textures) {
+            (void)id;
+            if (tex.path.empty()) continue;
+            try_add(tex.path, "texture");
+        }
+
+        // 2) Scripts
+        for (const auto& [id, sc] : scene.scripts) {
+            (void)id;
+            if (sc.path.empty()) continue;
+            try_add(sc.path, "script");
+        }
+
+        // 3) (Opcional) Si tu Sprite tiene un campo con ruta de imagen (descomenta si aplica)
+        // for (const auto& [id, spr] : scene.sprites) {
+        //     if (!spr.imagePath.empty()) try_add(spr.imagePath, "sprite");
+        // }
+
+        return out;
+    }
+
+    // Exporta sólo los assets usados preservando subcarpetas bajo Assets/.
+    // Devuelve una lista de faltantes para log/manifest.
+    static std::vector<std::filesystem::path> CopyUsedAssetsOnly(
+        const Scene& scene, const std::filesystem::path& outDir) {
+
+        std::vector<std::filesystem::path> missing;
+        const auto dstRoot = outDir / "Assets";
+
+        std::error_code mkec;
+        std::filesystem::create_directories(dstRoot, mkec);
+
+        auto used = CollectUsedAssets(scene);
+
+        // Fallback opcional: si no detectamos nada y querés evitar carpeta vacía
+        bool kExportCopyAllIfEmpty = true;
+        if (used.empty() && kExportCopyAllIfEmpty) {
+            std::error_code ec;
+            std::filesystem::copy(
+                GetAssetsRoot(), dstRoot,
+                std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
+            if (ec) Log::Error(std::string("[EXPORT] Fallback copy all Assets/ error: ") + ec.message());
+            else    Log::Info("[EXPORT] Fallback: no refs → se copió Assets/ completo.");
+            return {};
+        }
+
+        nlohmann::json manifest = nlohmann::json::object();
+        manifest["copied"] = nlohmann::json::array();
+        manifest["missing"] = nlohmann::json::array();
+
+        for (const auto& a : used) {
+            std::error_code ec;
+            const auto dst = dstRoot / a.rel; // preserva estructura relativa
+            std::filesystem::create_directories(dst.parent_path(), ec);
+            if (!ec) {
+                std::filesystem::copy_file(a.abs, dst,
+                    std::filesystem::copy_options::overwrite_existing, ec);
+            }
+
+            nlohmann::json row;
+            row["source"] = a.abs.generic_string();
+            row["dest"] = dst.generic_string();
+            row["reason"] = a.reason;
+
+            if (ec) {
+                row["status"] = std::string("error: ") + ec.message();
+                manifest["missing"].push_back(row);
+                missing.push_back(a.abs);
+            }
+            else {
+                row["status"] = "ok";
+                manifest["copied"].push_back(row);
+            }
+        }
+
+        // dump manifest
+        try {
+            std::ofstream mf(outDir / "assets_manifest.json");
+            mf << manifest.dump(2);
+        }
+        catch (...) {
+            // ignoramos errores del manifest
+        }
+
+        return missing;
+    }
+
+    // ====== SAVE/LOAD ======
     const char* kSavesDir = "Saves";
 
     static void EnsureSavesDir() {
         std::filesystem::path p(kSavesDir);
         std::error_code ec;
         std::filesystem::create_directories(p, ec);
-        if (ec) {
-            Log::Error(std::string("[SAVE] ERROR creando carpeta: ") + ec.message());
-        }
+        if (ec) Log::Error(std::string("[SAVE] ERROR creando carpeta: ") + ec.message());
     }
 
     // ---- AUTH: ahora usa EditorContext ----
@@ -118,7 +346,6 @@ namespace {
             Log::Error("[SAVE] ERROR  escena nula");
             return;
         }
-        // ⬇️ NUEVO: path por proyecto
 
         std::string projPath = edx.projectPath;
         if (projPath.empty()) projPath = (std::filesystem::path(kSavesDir) / "scene.json").string();
@@ -220,34 +447,6 @@ namespace {
         return dst;
     }
 
-#ifdef _WIN32 
-#ifndef WIN32_LEAN_AND_MEAN 
-#define WIN32_LEAN_AND_MEAN 
-#endif 
-#ifndef NOMINMAX 
-#define NOMINMAX 
-#endif 
-#include <windows.h> // MAX_PATH, GetModuleFileNameA 
-#endif
-#if __has_include(<tinyfiledialogs.h>) 
-#include <tinyfiledialogs.h> 
-#define GP_HAS_TINYFD 1 
-#else 
-#define GP_HAS_TINYFD 0 
-#endif
-
-    // Ruta del exe del Editor (carpeta bin actual)
-    static std::string GetExeDir() {
-#ifdef _WIN32
-        char buf[MAX_PATH];
-        GetModuleFileNameA(nullptr, buf, MAX_PATH);
-        std::filesystem::path p(buf);
-        return p.parent_path().string();
-#else
-        return std::filesystem::current_path().string();
-#endif
-    }
-
     // Devuelve ruta al ejecutable del Player junto al Editor
     static std::filesystem::path FindPlayerExe() {
         std::filesystem::path binDir = GetExeDir();
@@ -344,7 +543,8 @@ namespace {
                 "tinyfiledialogs", // Diálogos del editor
                 "cpr",             // HTTP del editor
                 "libcurl",         // Dependencia de cpr
-                "lua_static"       // El Player no debería depender de esto
+                "lua_static",      // El Player no debería depender de esto
+                "gtest"            // Librerías de test
             };
             // Nombres EXACTOS a EXCLUIR (por si aparecen con sufijos debug)
             static const char* kDenyExact[] = {
@@ -352,7 +552,8 @@ namespace {
                 "tinyfiledialogs_lib.dll", "tinyfiledialogs_libd.dll",
                 "cpr.dll", "cprd.dll",
                 "libcurl.dll", "libcurl-d.dll",
-                "lua_static.dll", "lua_staticd.dll"
+                "lua_static.dll", "lua_staticd.dll",
+                "gtest.dll", "gtest_main.dll"
             };
 
             auto iequals = [](char a, char b) { return ::tolower(a) == ::tolower(b); };
@@ -399,26 +600,19 @@ namespace {
         }
 #endif
 
-        // 5) Copiar Assets
+        // 5) Copiar Assets (filtrados)
         {
-            std::filesystem::path assetsSrc = std::filesystem::path(GetExeDir()) / "Assets";
-            std::filesystem::path assetsDst = outDir / "Assets";
-            if (std::filesystem::exists(assetsSrc)) {
-                std::error_code ec;
-                std::filesystem::create_directories(assetsDst, ec);
-                if (ec) {
-                    Log::Error(std::string("[EXPORT] ERROR creando Assets destino: ") + ec.message());
-                    return;
-                }
-                std::filesystem::copy(assetsSrc, assetsDst,
-                    std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
-                if (ec) {
-                    Log::Error(std::string("[EXPORT] ERROR copiando Assets: ") + ec.message());
-                    return;
-                }
+            LogAssetsRoot();
+            auto missing = CopyUsedAssetsOnly(*scx.scene, outDir);
+
+            if (missing.empty()) {
+                Log::Info("[EXPORT] Assets filtrados copiados correctamente.");
             }
             else {
-                Log::Info("[EXPORT] No hay carpeta Assets junto al editor. Se exporta sin Assets.");
+                Log::Info("[EXPORT] Algunos assets referenciados no se copiaron (ver assets_manifest.json).");
+                for (const auto& m : missing) {
+                    Log::Error(std::string("[EXPORT] Missing/Outside-Assets: ") + m.string());
+                }
             }
         }
 
