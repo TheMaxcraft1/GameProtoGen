@@ -9,7 +9,7 @@ struct EditorContext {
     std::shared_ptr<ApiClient> apiClient;
     std::shared_ptr<TokenManager> tokenManager;
     Entity selected{};
-
+    std::string projectPath = "";
     struct RuntimeState {
         bool playing = false;
     } runtime;

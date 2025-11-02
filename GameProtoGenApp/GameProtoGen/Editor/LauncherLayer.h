@@ -13,6 +13,9 @@ public:
 private:
     bool m_loggedIn = false;
     std::string m_selected; // ruta a Saves/*.json
+    bool m_newProjModal = false;
+    char m_newProjName[128] = "NuevoProyecto";
+    std::string m_newProjError;
 
     // Acciones
     void DoLoginInteractive();   // login + token manager + refresher

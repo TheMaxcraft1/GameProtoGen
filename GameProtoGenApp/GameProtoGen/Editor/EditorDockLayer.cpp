@@ -113,12 +113,16 @@ namespace {
         using namespace std::chrono;
         EnsureSavesDir();
         auto& scx = SceneContext::Get();
+        auto& edx = EditorContext::Get();
         if (!scx.scene) {
             Log::Error("[SAVE] ERROR  escena nula");
             return;
         }
-        auto path = std::filesystem::path(kSavesDir) / "scene.json";
-        bool ok = SceneSerializer::Save(*scx.scene, path.string());
+        // ⬇️ NUEVO: path por proyecto
+
+        std::string projPath = edx.projectPath;
+        if (projPath.empty()) projPath = (std::filesystem::path(kSavesDir) / "scene.json").string();
+        bool ok = SceneSerializer::Save(*scx.scene, projPath);
 
         auto now = system_clock::now();
         std::time_t t = system_clock::to_time_t(now);
@@ -130,7 +134,7 @@ namespace {
 #endif
         std::ostringstream oss;
         oss << "[SAVE] " << (ok ? "OK" : "ERROR")
-            << "  " << path.string() << "  "
+            << "  " << projPath << "  "
             << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
         Log::Info(oss.str());
     }
@@ -138,12 +142,15 @@ namespace {
     static void DoLoad() {
         using namespace std::chrono;
         auto& scx = SceneContext::Get();
+        auto& edx = EditorContext::Get();
         if (!scx.scene) {
             Log::Error("[LOAD] ERROR  escena nula");
             return;
         }
-        auto path = std::filesystem::path(kSavesDir) / "scene.json";
-        bool ok = SceneSerializer::Load(*scx.scene, path.string());
+        std::string projPath = edx.projectPath;
+        if (projPath.empty()) projPath = (std::filesystem::path(kSavesDir) / "scene.json").string();
+
+        bool ok = SceneSerializer::Load(*scx.scene, projPath);
         FixSceneAfterLoad();
         Renderer2D::ClearTextureCache();
 
@@ -157,7 +164,7 @@ namespace {
 #endif
         std::ostringstream oss;
         oss << "[LOAD] " << (ok ? "OK" : "ERROR")
-            << "  " << path.string() << "  "
+            << "  " << projPath << "  "
             << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
         Log::Info(oss.str());
     }

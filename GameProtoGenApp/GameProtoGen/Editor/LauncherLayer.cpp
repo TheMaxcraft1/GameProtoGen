@@ -14,6 +14,9 @@
 
 #include <imgui.h>
 #include <filesystem>
+#include <algorithm>
+#include <cctype>
+#include <cstdio>
 #include "Core/SFMLWindow.h"
 
 using std::filesystem::exists;
@@ -25,10 +28,28 @@ static void EnsureSavesDir() {
     (void)ec;
 }
 
+static std::string NormalizeProjectName(std::string name, std::string& err) {
+    // Trim
+    while (!name.empty() && (name.back() == ' ' || name.back() == '.')) name.pop_back();
+    while (!name.empty() && (name.front() == ' ')) name.erase(name.begin());
+
+    if (name.empty()) { err = "El nombre no puede estar vacío."; return {}; }
+
+    auto validChar = [](unsigned char c) {
+        return std::isalnum(c) || c == '-' || c == '_' || c == ' ';
+        };
+    if (!std::all_of(name.begin(), name.end(), [&](char ch) { return validChar((unsigned char)ch); })) {
+        err = "Usá solo letras, números, espacio, guion o guion bajo.";
+        return {};
+    }
+    // Reemplazar espacios por guión bajo
+    for (auto& ch : name) if (ch == ' ') ch = '_';
+    return name;
+}
+
 bool LauncherLayer::TryAutoLogin() {
     auto& edx = EditorContext::Get();
 
-    // Asegurar que haya TokenManager (por si alguien llega al launcher “frío”)
     if (!edx.tokenManager) {
         OidcConfig cfg;
         cfg.client_id = "2041dbc5-c266-43aa-af66-765b1440f34a";
@@ -38,10 +59,8 @@ bool LauncherLayer::TryAutoLogin() {
         edx.tokenManager = std::make_shared<TokenManager>(cfg);
     }
 
-    // 1) Intentar cargar tokens persistidos
     if (!edx.tokenManager->Load()) return false;
 
-    // 2) Conectar refresco/preflight al ApiClient (si existe)
     if (edx.apiClient) {
         edx.apiClient->SetTokenRefresher([mgr = edx.tokenManager]() -> std::optional<std::string> {
             return mgr->Refresh();
@@ -49,10 +68,8 @@ bool LauncherLayer::TryAutoLogin() {
         edx.apiClient->SetPreflight([mgr = edx.tokenManager]() { (void)mgr->EnsureFresh(); });
     }
 
-    // 3) Asegurar que el access_token esté fresco
     if (!edx.tokenManager->EnsureFresh()) return false;
 
-    // 4) Si hay access_token, setearlo en el ApiClient
     const std::string& at = edx.tokenManager->AccessToken();
     if (at.empty()) return false;
 
@@ -81,7 +98,6 @@ void LauncherLayer::DoLoginInteractive() {
     std::string err;
     auto tokens = oidc.AcquireTokenInteractive(&err);
     if (!tokens) {
-        // Podrías mostrar un popup si querés
         return;
     }
 
@@ -158,14 +174,24 @@ void LauncherLayer::EnterEditor() {
     auto& scx = SceneContext::Get();
     auto& edx = EditorContext::Get();
 
-    // cargar o sembrar
+    // cargar existente o sembrar nuevo
     if (!m_selected.empty() && exists(m_selected)) {
         if (!scx.scene) scx.scene = std::make_shared<Scene>();
         SceneSerializer::Load(*scx.scene, m_selected);
         Renderer2D::ClearTextureCache();
+        edx.projectPath = m_selected; // usar este archivo como proyecto actual
     }
     else {
+        // Nuevo proyecto: si no hay ruta aún, usar una por defecto (safety)
+        if (edx.projectPath.empty()) {
+            edx.projectPath = (std::filesystem::path("Saves") / "scene.json").string();
+        }
         SeedNewScene();
+
+        // Guardado inicial del nuevo proyecto para que aparezca el archivo
+        std::error_code ec;
+        std::filesystem::create_directories("Saves", ec);
+        SceneSerializer::Save(*scx.scene, edx.projectPath);
     }
 
     app.SetMode(gp::Application::Mode::Editor);
@@ -176,7 +202,7 @@ void LauncherLayer::EnterEditor() {
     app.PushLayer(new EditorDockLayer());
     app.PushLayer(new ViewportPanel());
     app.PushLayer(new InspectorPanel());
-    app.PushLayer(new ChatPanel(edx.apiClient)); // << usa EditorContext
+    app.PushLayer(new ChatPanel(edx.apiClient));
 
     // cerrar launcher
     app.PopLayer(this);
@@ -198,12 +224,12 @@ void LauncherLayer::OnGuiRender() {
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24, 24)); // margen amplio
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24, 24));
     ImGui::Begin("##HubRoot", nullptr, flags);
     ImGui::PopStyleVar(3);
 
     // Centrar un panel de ancho fijo
-    const float contentW = 720.f; // el “panel” del hub
+    const float contentW = 720.f;
     const float availW = ImGui::GetContentRegionAvail().x;
     const float x = (availW > contentW) ? (availW - contentW) * 0.5f : 0.f;
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + x);
@@ -231,7 +257,6 @@ void LauncherLayer::OnGuiRender() {
     ImGui::Separator();
 
     // --- Proyectos ---
-    ImGui::TextUnformatted("Elegí un proyecto local (Saves/*.json):");
     DrawProjectPicker();
 
     ImGui::Dummy(ImVec2(0, 8));
@@ -240,8 +265,12 @@ void LauncherLayer::OnGuiRender() {
     // Acciones
     ImGui::BeginDisabled(!m_loggedIn);
     if (ImGui::Button("Nuevo proyecto")) {
+        // Abrir modal para pedir nombre
         m_selected.clear();
-        EnterEditor();
+        m_newProjModal = true;
+        std::snprintf(m_newProjName, sizeof(m_newProjName), "Nuevo Proyecto");
+        m_newProjError.clear();
+        ImGui::OpenPopup("Crear nuevo proyecto");
     }
     ImGui::SameLine();
     ImGui::BeginDisabled(m_selected.empty());
@@ -256,6 +285,61 @@ void LauncherLayer::OnGuiRender() {
         ImGui::TextDisabled("Para continuar, iniciá sesión.");
     }
 
-    ImGui::EndChild(); // ##HubContent
-    ImGui::End();      // ##HubRoot
+    // --- Modal "Nuevo proyecto" ---
+    if (ImGui::BeginPopupModal("Crear nuevo proyecto", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("Nombre del proyecto:");
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);       
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);        
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.20f, 0.50f, 0.90f, 1.00f)); 
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(1.00f, 1.00f, 1.00f, 1.00f)); 
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.96f, 0.98f, 1.00f, 1.00f));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.92f, 0.96f, 1.00f, 1.00f)); 
+        ImGui::InputText("##projname", m_newProjName, IM_ARRAYSIZE(m_newProjName));
+        ImGui::PopStyleColor(3); 
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor();
+        ImGui::TextDisabled("Se guardará en Saves/<nombre>.json");
+
+        if (!m_newProjError.empty()) {
+            ImGui::TextColored(ImVec4(0.8f, 0.1f, 0.1f, 1.f), "%s", m_newProjError.c_str());
+        }
+
+        ImGui::Separator();
+        if (ImGui::Button("Crear")) {
+            std::string err;
+            std::string clean = NormalizeProjectName(m_newProjName, err);
+            if (clean.empty()) {
+                m_newProjError = err;
+            }
+            else {
+                std::filesystem::path projPath = std::filesystem::path("Saves") / (clean + ".json");
+
+                // Asegurar carpeta
+                EnsureSavesDir();
+
+                // Setear selección y editor context
+                m_selected = projPath.string();
+                auto& edx = EditorContext::Get();
+                edx.projectPath = m_selected;
+
+                // Entrar al editor (esto crea la escena y guarda inicial)
+                EnterEditor();
+
+                ImGui::CloseCurrentPopup();
+                m_newProjModal = false;
+                m_newProjError.clear();
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancelar")) {
+            ImGui::CloseCurrentPopup();
+            m_newProjModal = false;
+            m_newProjError.clear();
+        }
+
+        ImGui::EndPopup();
+    }
+
+    ImGui::EndChild();
+    ImGui::End();
 }
