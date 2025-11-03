@@ -31,6 +31,16 @@ static void EnsureSavesDir() {
     (void)ec;
 }
 
+static bool DeleteFileSafe(const std::string& path, std::string& err)
+{
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) return true; // ya no existe
+    if (!std::filesystem::is_regular_file(path, ec)) { err = "No es un archivo regular."; return false; }
+    std::filesystem::remove(path, ec);
+    if (ec) { err = ec.message(); return false; }
+    return true;
+}
+
 static std::string NormalizeProjectName(std::string name, std::string& err) {
     // Trim
     while (!name.empty() && (name.back() == ' ' || name.back() == '.')) name.pop_back();
@@ -341,9 +351,9 @@ void LauncherLayer::OnGuiRender() {
     ImGui::Separator();
 
     // Acciones
+    // Acciones
     ImGui::BeginDisabled(!m_loggedIn);
     if (ImGui::Button("Nuevo proyecto")) {
-        // Abrir modal para pedir nombre
         m_selected.clear();
         m_newProjModal = true;
         std::snprintf(m_newProjName, sizeof(m_newProjName), "Nuevo Proyecto");
@@ -357,6 +367,59 @@ void LauncherLayer::OnGuiRender() {
     }
     ImGui::EndDisabled();
     ImGui::EndDisabled();
+
+    // --- Botón Eliminar (habilitado si hay selección) ---
+    ImGui::SameLine();
+    ImGui::BeginDisabled(m_selected.empty());
+    if (ImGui::Button("Eliminar seleccionado")) {
+        m_toDeletePath = m_selected;     // congelar ruta al momento del click
+        m_deleteError.clear();
+        m_confirmDeleteModal = true;
+        ImGui::OpenPopup("Eliminar proyecto");
+    }
+    ImGui::EndDisabled();
+
+    // --- Modal de confirmación de borrado ---
+    if (ImGui::BeginPopupModal("Eliminar proyecto", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextWrapped("Vas a eliminar el proyecto:\n%s", m_toDeletePath.c_str());
+        ImGui::Dummy(ImVec2(0, 6));
+        ImGui::TextDisabled("Esta acción no se puede deshacer.");
+
+        if (!m_deleteError.empty()) {
+            ImGui::Dummy(ImVec2(0, 6));
+            ImGui::TextColored(ImVec4(0.8f, 0.1f, 0.1f, 1.f), "Error: %s", m_deleteError.c_str());
+        }
+
+        ImGui::Dummy(ImVec2(0, 6));
+        if (ImGui::Button("Eliminar", ImVec2(120, 0))) {
+            std::string err;
+            if (DeleteFileSafe(m_toDeletePath, err)) {
+                // Si era el proyecto activo, limpiarlo
+                auto& edx = EditorContext::Get();
+                if (edx.projectPath == m_toDeletePath) {
+                    edx.projectPath.clear();
+                }
+                // Limpiar selección y cerrar modal
+                if (m_selected == m_toDeletePath) m_selected.clear();
+                m_toDeletePath.clear();
+                m_confirmDeleteModal = false;
+                ImGui::CloseCurrentPopup();
+            }
+            else {
+                m_deleteError = err.empty() ? "No se pudo eliminar el archivo." : err;
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancelar", ImVec2(120, 0))) {
+            m_confirmDeleteModal = false;
+            m_toDeletePath.clear();
+            m_deleteError.clear();
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    }
+
 
     if (!m_loggedIn) {
         ImGui::Dummy(ImVec2(0, 6));

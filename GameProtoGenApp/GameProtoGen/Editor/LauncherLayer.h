@@ -19,6 +19,9 @@ private:
     std::string m_newProjError;
     sf::Texture m_LogoTex;
     bool m_LogoOK = false;
+    bool m_confirmDeleteModal = false;
+    std::string m_toDeletePath;
+    std::string m_deleteError;
 
     // Acciones
     void DoLoginInteractive();   // login + token manager + refresher
