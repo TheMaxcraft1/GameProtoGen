@@ -1,0 +1,7 @@
+#pragma once
+#include "Core/Log.h"
+#include <iostream>
+struct StdoutLogSink : ILogSink {
+    void info(const std::string& m) override { std::cout << m << std::endl; }
+    void error(const std::string& m) override { std::cerr << m << std::endl; }
+};

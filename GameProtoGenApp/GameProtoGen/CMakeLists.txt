@@ -4,10 +4,14 @@ project(GameProtoGen LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Recomendado: si usás Ninja, que los libs salgan a un lugar predecible
+# Salidas predecibles
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+# Flags de build (ON por defecto para permitir "all-in-one" si querés)
+option(BUILD_EDITOR "Build the editor executable" ON)
+option(BUILD_PLAYER "Build the standalone player executable" ON)
 
 include(FetchContent)
 
@@ -30,33 +34,30 @@ add_library(lua_static ${lua_SOURCE_DIR}/lapi.c ${lua_SOURCE_DIR}/lauxlib.c
     ${lua_SOURCE_DIR}/lutf8lib.c ${lua_SOURCE_DIR}/lvm.c ${lua_SOURCE_DIR}/lzio.c)
 target_include_directories(lua_static PUBLIC ${lua_SOURCE_DIR})
 
-# --- sol2 (header-only) ---
+# --- sol2 ---
 FetchContent_Declare(sol2
   GIT_REPOSITORY https://github.com/ThePhD/sol2.git
   GIT_TAG v3.3.0
 )
 FetchContent_MakeAvailable(sol2)
 
-# ---------- SFML 3 ----------
-# (Desactiva tests/ejemplos para acelerar)
+# --- SFML 3 ---
 set(SFML_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SFML_BUILD_TESTING  OFF CACHE BOOL "" FORCE)
-
 FetchContent_Declare(sfml
   GIT_REPOSITORY https://github.com/SFML/SFML.git
   GIT_TAG 3.0.0
 )
 FetchContent_MakeAvailable(sfml)
-# Targets que exporta: SFML::System SFML::Window SFML::Graphics ...
 
-# ---------- nlohmann/json ----------
+# --- nlohmann/json ---
 FetchContent_Declare(json
   GIT_REPOSITORY https://github.com/nlohmann/json.git
   GIT_TAG v3.11.3
 )
 FetchContent_MakeAvailable(json)
 
-# ---------- tinyfiledialogs (file picker nativo) ----------
+# --- tinyfiledialogs ---
 FetchContent_Declare(tinyfiledialogs
   GIT_REPOSITORY https://github.com/native-toolkit/tinyfiledialogs.git
   GIT_TAG master
@@ -65,47 +66,80 @@ FetchContent_MakeAvailable(tinyfiledialogs)
 add_library(tinyfiledialogs_lib ${tinyfiledialogs_SOURCE_DIR}/tinyfiledialogs.c)
 target_include_directories(tinyfiledialogs_lib PUBLIC ${tinyfiledialogs_SOURCE_DIR})
 
-# ---------- cpr (async HTTP over libcurl) ----------
+# --- cpr ---
 set(CPR_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-# Si no tenés libcurl del sistema, esto compila uno embebido (más lento la primera vez).
 set(CPR_USE_SYSTEM_CURL OFF CACHE BOOL "" FORCE)
-
 FetchContent_Declare(cpr
   GIT_REPOSITORY https://github.com/libcpr/cpr.git
   GIT_TAG 1.11.1
 )
 FetchContent_MakeAvailable(cpr)
 
-# ---------- Dear ImGui (rama docking) ----------
+# --- ImGui ---
 FetchContent_Declare(imgui
   GIT_REPOSITORY https://github.com/ocornut/imgui.git
   GIT_TAG v1.91.9-docking
 )
 FetchContent_MakeAvailable(imgui)
 set(IMGUI_DIR ${imgui_SOURCE_DIR})
-# Esto crea un target 'imgui' (lib) + incluye headers <imgui.h>
 
-# ---------- ImGui-SFML 3.0 ----------
-# IMPORTANTE:
-# - Esta versión soporta SFML 3.
-# - Como ya tenemos SFML e ImGui en el mismo árbol, no necesitamos que los "encuentre" fuera.
-# - Por defecto ImGui-SFML intentará find_package(SFML 3) y 'imgui' target, que ya existen.
-
-# (Opcional) apaga su build de ejemplo/tests para acelerar
+# --- ImGui-SFML ---
 set(IMGUI_SFML_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(IMGUI_SFML_BUILD_TESTING  OFF CACHE BOOL "" FORCE)
-
 FetchContent_Declare(imgui-sfml
   GIT_REPOSITORY https://github.com/SFML/imgui-sfml.git
   GIT_TAG master
 )
 FetchContent_MakeAvailable(imgui-sfml)
-# Target: ImGui-SFML::ImGui-SFML
 
-# ---------- Tu ejecutable ----------
-add_executable(GameProtoGen
-    Core/Application.cpp
+# ----------- AUTH deps -----------
+# cpp-httplib
+FetchContent_Declare(cpp-httplib
+  GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+  GIT_TAG v0.15.3
+)
+FetchContent_MakeAvailable(cpp-httplib) # target: httplib::httplib
+
+# --- cppcodec (INTERFACE) ---
+FetchContent_Declare(cppcodec
+  GIT_REPOSITORY https://github.com/tplgy/cppcodec.git
+  GIT_TAG v0.2
+)
+FetchContent_GetProperties(cppcodec)
+if (NOT cppcodec_POPULATED)
+  FetchContent_Populate(cppcodec)
+  if (NOT TARGET cppcodec)
+    add_library(cppcodec INTERFACE)
+    target_include_directories(cppcodec INTERFACE ${cppcodec_SOURCE_DIR})
+  endif()
+endif()
+if (NOT EXISTS "${cppcodec_SOURCE_DIR}/cppcodec/base64_url_unpadded.hpp")
+  message(FATAL_ERROR "No se encontró ${cppcodec_SOURCE_DIR}/cppcodec/base64_url_unpadded.hpp")
+endif()
+
+# picosha2 (header-only)
+FetchContent_Declare(picosha2
+  GIT_REPOSITORY https://github.com/okdshin/PicoSHA2.git
+  GIT_TAG master
+)
+FetchContent_MakeAvailable(picosha2)
+
+# --- GoogleTest ---
+include(FetchContent)
+FetchContent_Declare(googletest
+  GIT_REPOSITORY https://github.com/google/googletest.git
+  GIT_TAG v1.15.2
+)
+FetchContent_MakeAvailable(googletest)
+
+# ===============================
+#   LIBRERÍA RUNTIME (sin ImGui)
+# ===============================
+add_library(gp_runtime STATIC
+    # Core (sin Application.cpp)
     Core/SFMLWindow.cpp
+    Core/Log.h
+    Core/Log.cpp
 
     # ECS
     ECS/Scene.cpp
@@ -117,54 +151,149 @@ add_executable(GameProtoGen
     Systems/ScriptVM.cpp
     Systems/ScriptSystem.cpp
 
-    # Editor
-    Editor/EditorApp.cpp
-    Editor/ImGuiLayer.cpp
-    Editor/Panels/ViewportPanel.cpp
-    Editor/Panels/InspectorPanel.cpp
-    Editor/Panels/ChatPanel.cpp
-
-    # Net
-    Net/ApiClient.cpp
-
-    # ImGui extra
-    ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
-    
+    # Runtime
+    Runtime/GameRunner.cpp
+    Runtime/GameRunner.h
+    Runtime/EditorContext.h
+    Runtime/SceneContext.h
 )
 
- target_sources(GameProtoGen PRIVATE
-    ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
+target_include_directories(gp_runtime PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${sol2_SOURCE_DIR}/include
+    ${picosha2_SOURCE_DIR}
 )
 
-target_link_libraries(GameProtoGen PRIVATE
+target_link_libraries(gp_runtime PUBLIC
   SFML::Graphics
   SFML::Window
   SFML::System
-  ImGui-SFML::ImGui-SFML
   nlohmann_json::nlohmann_json
-  cpr::cpr
   lua_static
-  tinyfiledialogs_lib 
 )
 
-# Copia toda la carpeta Assets al directorio donde queda la .exe (Debug/Release)
+# ======================================
+#   EJECUTABLE EDITOR: GameProtoGen
+# ======================================
+if (BUILD_EDITOR)
+  add_executable(GameProtoGen
+      # Core del Editor (con ImGui)
+      Core/Application.cpp
+
+      # Editor main
+      Editor/EditorApp.cpp
+
+      # Panels y capas
+      Editor/Panels/ViewportPanel.cpp
+      Editor/Panels/InspectorPanel.cpp
+      Editor/Panels/ChatPanel.cpp
+      Editor/LauncherLayer.h
+      Editor/LauncherLayer.cpp
+      Editor/ImGuiCoreLayer.h
+      Editor/ImGuiCoreLayer.cpp
+      Editor/EditorDockLayer.h
+      Editor/EditorDockLayer.cpp
+      Editor/EditorLogSink.h
+
+      # Net/Auth (solo Editor)
+      Net/ApiClient.cpp
+      Auth/PKCE.h
+      Auth/PKCE.cpp
+      Auth/OidcClient.h
+      Auth/OidcClient.cpp
+      Auth/LoopbackServer.h
+      Auth/LoopbackServer.cpp
+      Auth/TokenManager.h
+
+      # ImGui extra: std::string helpers (solo Editor)
+      ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
+  )
+
+  target_link_libraries(GameProtoGen PRIVATE
+    gp_runtime
+    ImGui-SFML::ImGui-SFML
+    nlohmann_json::nlohmann_json
+    cpr::cpr
+    tinyfiledialogs_lib
+    httplib::httplib
+    cppcodec
+  )
+
+  target_include_directories(GameProtoGen PRIVATE
+      ${IMGUI_DIR}                 # para imgui.h
+      ${IMGUI_DIR}/misc/cpp        # para imgui_stdlib.h
+      ${cppcodec_SOURCE_DIR}
+  )
+
+# Copiar Assets junto al .exe (Editor)
 add_custom_command(TARGET GameProtoGen POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             ${CMAKE_SOURCE_DIR}/Assets
             $<TARGET_FILE_DIR:GameProtoGen>/Assets
 )
 
-if (WIN32)
-  target_link_libraries(GameProtoGen PRIVATE comdlg32)
-endif()
-
-if (MSVC)
-  add_compile_options("/utf-8")
-endif()
-
-target_include_directories(GameProtoGen PRIVATE 
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${IMGUI_DIR}/misc/cpp
-    ${sol2_SOURCE_DIR}/include
+# ⬇️ NUEVO: Copiar Internal junto al .exe (Editor)
+add_custom_command(TARGET GameProtoGen POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/Internal
+            $<TARGET_FILE_DIR:GameProtoGen>/Internal
 )
 
+  if (WIN32)
+    target_link_libraries(GameProtoGen PRIVATE comdlg32)
+  endif()
+
+  if (MSVC)
+    add_compile_options("/utf-8")
+  endif()
+endif()
+
+# ======================================
+#   EJECUTABLE PLAYER: GameProtoGenPlayer
+# ======================================
+if (BUILD_PLAYER)
+  add_executable(GameProtoGenPlayer
+      Runtime/PlayerMain.cpp
+  )
+
+  # Solo depende del runtime (NO ImGui, NO Auth, NO HTTP)
+  target_link_libraries(GameProtoGenPlayer PRIVATE
+    gp_runtime
+  )
+
+  target_include_directories(GameProtoGenPlayer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+  )
+
+  # Copiar Assets junto al .exe (Player)
+  add_custom_command(TARGET GameProtoGenPlayer POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+              ${CMAKE_SOURCE_DIR}/Assets
+              $<TARGET_FILE_DIR:GameProtoGenPlayer>/Assets
+  )
+
+  if (WIN32)
+    # Para ocultar consola en Player, descomentar:
+    # set_target_properties(GameProtoGenPlayer PROPERTIES WIN32_EXECUTABLE TRUE)
+  endif()
+endif()
+
+# ===============================
+#   TESTS UNITARIOS (headless)
+# ===============================
+enable_testing()
+
+add_executable(gp_tests
+  Tests/test_collision.cpp
+  Tests/test_scriptvm.cpp
+  Tests/test_gamerunner.cpp
+  Tests/test_scene_serializer.cpp
+  Tests/test_apiclient.cpp
+)
+
+target_link_libraries(gp_tests PRIVATE
+  gp_runtime
+  GTest::gtest GTest::gtest_main
+)
+
+add_test(NAME gp_tests COMMAND gp_tests)

@@ -51,29 +51,34 @@ namespace gp {
 
     class Application {
     public:
+        enum class Mode { Hub, Editor };
         explicit Application(const WindowProps& props);
         virtual ~Application();
         void Run();
         void PushLayer(Layer* layer);
+        void PopLayer(Layer* layer);
         IWindow& Window() { return *m_Window; }
 
-        // NUEVO: singleton simple para que las layers puedan pedir salir
         static Application& Get() { return *s_Instance; }
 
-        // NUEVO: flujo de cierre con confirmación
         void RequestClose() { m_WantsClose = true; }
         void CancelClose() { m_WantsClose = false; }
         bool WantsClose() const { return m_WantsClose; }
         void QuitNow() { m_Running = false; } // cierra el main loop
+        void SetMode(Mode m) { m_Mode = m; }
+        Mode GetMode() const { return m_Mode; }
 
     private:
         bool m_Running = true;
-        bool m_WantsClose = false; // NUEVO
+        bool m_WantsClose = false; 
         IWindow* m_Window = nullptr;
         std::vector<Layer*> m_Layers;
         void OnEvent(const Event& e);
+        void FlushPending();
+        std::vector<Layer*> m_PendingRemove;
 
-        static Application* s_Instance; // NUEVO
+        static Application* s_Instance; 
+        Mode m_Mode = Mode::Hub;
     };
 
 

@@ -1,6 +1,7 @@
 // GameProtoGen/ChatPanel.cpp
 #include "ChatPanel.h"
 #include "Runtime/SceneContext.h"
+#include "Runtime/EditorContext.h"   // << agregado
 #include "ECS/Scene.h"
 #include "ECS/SceneSerializer.h"
 #include <imgui.h>
@@ -17,6 +18,7 @@
 #include <filesystem>
 #include "ViewportPanel.h"
 #include "Systems/Renderer2D.h"
+#include "Core/Log.h"
 
 using json = nlohmann::json;
 
@@ -226,7 +228,7 @@ void ChatPanel::OnGuiRender() {
                     const nlohmann::json& root = *res.data;
                     const std::string kind = root.value("kind", "");
 
-                    ViewportPanel::AppendLog("[DBG]: " + kind);
+                    Log::Info("[DBG]: " + kind);
 
                     if (kind == "ops") {
                         OpCounts c = ApplyOpsFromJson(root);
@@ -250,11 +252,11 @@ void ChatPanel::OnGuiRender() {
                         const std::string outPath = "Assets/Generated/" + safeName;
                         if (!data.empty() && SaveBase64ToFile(data, outPath)) {
                             typingBubble.text = std::string("Imagen guardada en:\n") + std::filesystem::absolute(outPath).string();
-                            ViewportPanel::AppendLog(std::string("[ASSET] Guardado: ") + outPath);
+                            Log::Info(std::string("[ASSET] Guardado: ") + outPath);
                         }
                         else {
                             typingBubble.text = "No pude guardar la imagen (payload incompleto o base64 inválido).";
-                            ViewportPanel::AppendLog("[ASSET] ERROR al guardar la imagen.");
+                            Log::Error("[ASSET] ERROR al guardar la imagen.");
                         }
                     }
                     else if (kind == "script") {
@@ -273,11 +275,11 @@ void ChatPanel::OnGuiRender() {
                             typingBubble.text = std::string("Script guardado en:\n")
                                 + std::filesystem::absolute(outPath).string()
                                 + "\n(No asignado a ninguna entidad.)";
-                            ViewportPanel::AppendLog(std::string("[SCRIPT] Guardado: ") + outPath);
+                            Log::Info(std::string("[SCRIPT] Guardado: ") + outPath);
                         }
                         else {
                             typingBubble.text = "No pude guardar el script (payload vacío o error de escritura).";
-                            ViewportPanel::AppendLog("[SCRIPT] ERROR al guardar script.");
+                            Log::Error("[SCRIPT] ERROR al guardar script.");
                         }
                     }
                     else if (kind == "bundle") {
@@ -298,10 +300,10 @@ void ChatPanel::OnGuiRender() {
                                     }
                                     const std::string outPath = "Assets/Generated/" + safeName;
                                     if (!data.empty() && SaveBase64ToFile(data, outPath)) {
-                                        ViewportPanel::AppendLog(std::string("[ASSET] Guardado: ") + outPath);
+                                        Log::Info(std::string("[ASSET] Guardado: ") + outPath);
                                     }
                                     else {
-                                        ViewportPanel::AppendLog("[ASSET] ERROR al guardar: " + outPath);
+                                        Log::Error("[ASSET] ERROR al guardar: " + outPath);
                                     }
                                 }
                                 if (ik == "script") {
@@ -313,30 +315,31 @@ void ChatPanel::OnGuiRender() {
                                     }
                                     const std::string outPath = "Assets/Scripts/" + safeName;
                                     if (!code.empty() && SaveTextToFile(outPath, code)) {
-                                        ViewportPanel::AppendLog(std::string("[SCRIPT] Guardado: ") + outPath);
-                                        // Asignación automática (misma regla que arriba)
-                                        auto& ctx = SceneContext::Get();
+                                        Log::Info(std::string("[SCRIPT] Guardado: ") + outPath);
+                                        // Asignación automática
+                                        auto& scx = SceneContext::Get();
+                                        auto& edx = EditorContext::Get();
                                         EntityID target = 0;
-                                        if (ctx.selected) target = ctx.selected.id;
-                                        else if (ctx.scene && !ctx.scene->playerControllers.empty())
-                                            target = ctx.scene->playerControllers.begin()->first;
-                                        if (!target && ctx.scene) {
-                                            Entity e = ctx.scene->CreateEntity();
-                                            ctx.scene->transforms[e.id] = Transform{ ctx.cameraCenter, {1.f,1.f}, 0.f };
-                                            ctx.scene->sprites[e.id] = Sprite{ {64.f,64.f}, sf::Color(255,255,255,255) };
-                                            ctx.scene->colliders[e.id] = Collider{ {32.f,32.f}, {0.f,0.f} };
+                                        if (edx.selected) target = edx.selected.id;
+                                        else if (scx.scene && !scx.scene->playerControllers.empty())
+                                            target = scx.scene->playerControllers.begin()->first;
+                                        if (!target && scx.scene) {
+                                            Entity e = scx.scene->CreateEntity();
+                                            scx.scene->transforms[e.id] = Transform{ scx.cameraCenter, {1.f,1.f}, 0.f };
+                                            scx.scene->sprites[e.id] = Sprite{ {64.f,64.f}, sf::Color(255,255,255,255) };
+                                            scx.scene->colliders[e.id] = Collider{ {32.f,32.f}, {0.f,0.f} };
                                             target = e.id;
-                                            ctx.selected = e;
+                                            edx.selected = e; // << mover selección a EditorContext
                                         }
-                                        if (ctx.scene && target) {
-                                            auto& sc = ctx.scene->scripts[target];
+                                        if (scx.scene && target) {
+                                            auto& sc = scx.scene->scripts[target];
                                             sc.path = outPath;
                                             sc.inlineCode.clear();
                                             sc.loaded = false;
                                         }
                                     }
                                     else {
-                                        ViewportPanel::AppendLog("[SCRIPT] ERROR al guardar (bundle).");
+                                        Log::Error("[SCRIPT] ERROR al guardar (bundle).");
                                     }
                                 }
                             }
@@ -407,8 +410,8 @@ void ChatPanel::SendCurrentPrompt() {
 
     // 3) Disparar request
     m_Busy = true;
-    auto& ctx = SceneContext::Get();
-    nlohmann::json sceneJson = ctx.scene ? SceneSerializer::Dump(*ctx.scene)
+    auto& scx = SceneContext::Get();
+    nlohmann::json sceneJson = scx.scene ? SceneSerializer::Dump(*scx.scene)
         : nlohmann::json::object();
     m_Fut = m_Client->SendCommandAsync(m_Input, sceneJson);
 
@@ -418,7 +421,7 @@ void ChatPanel::SendCurrentPrompt() {
 
 void ChatPanel::RenderHistory() {
 
-    const float availW = ImGui::GetContentRegionAvail().x;        
+    const float availW = ImGui::GetContentRegionAvail().x;
     const float bubbleW = std::min(520.0f, availW * 0.9f);
     const float pad = 8.0f;
     const float spacingY = 6.0f;
@@ -554,10 +557,10 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
         if (!data.empty()) {
             std::string outPath = "Assets/Generated/" + fname;
             if (SaveBase64ToFile(data, outPath)) {
-                ViewportPanel::AppendLog("[ASSET] Guardada imagen: " + outPath);
+                Log::Info("[ASSET] Guardada imagen: " + outPath);
             }
             else {
-                ViewportPanel::AppendLog("[ASSET] ERROR al guardar: " + outPath);
+                Log::Error("[ASSET] ERROR al guardar: " + outPath);
             }
         }
         return counts; // no hay ops
@@ -566,8 +569,8 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
     // --- Procesamiento normal de ops ---
     if (!resp.contains("ops") || !resp["ops"].is_array()) return counts;
 
-    auto& ctx = SceneContext::Get();
-    if (!ctx.scene) ctx.scene = std::make_shared<Scene>();
+    auto& scx = SceneContext::Get();
+    if (!scx.scene) scx.scene = std::make_shared<Scene>();
 
     // Conjuntos para coalescer por entidad
     std::unordered_set<uint32_t> created, modified, removed;
@@ -579,41 +582,41 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
             auto pos = op["pos"];
             auto size = op["size"];
             sf::Color col = TryParseColor(op, sf::Color(60, 60, 70, 255));
-            Entity e = ctx.scene->CreateEntity();
-            ctx.scene->transforms[e.id] = Transform{ {pos[0].get<float>(), pos[1].get<float>()}, {1.f,1.f}, 0.f };
-            ctx.scene->sprites[e.id] = Sprite{ {size[0].get<float>(), size[1].get<float>()}, col };
-            ctx.scene->colliders[e.id] = Collider{ {size[0].get<float>() * 0.5f, size[1].get<float>() * 0.5f}, {0.f,0.f} };
+            Entity e = scx.scene->CreateEntity();
+            scx.scene->transforms[e.id] = Transform{ {pos[0].get<float>(), pos[1].get<float>()}, {1.f,1.f}, 0.f };
+            scx.scene->sprites[e.id] = Sprite{ {size[0].get<float>(), size[1].get<float>()}, col };
+            scx.scene->colliders[e.id] = Collider{ {size[0].get<float>() * 0.5f, size[1].get<float>() * 0.5f}, {0.f,0.f} };
 
             // NUEVO: textura opcional
             if (op.contains("texturePath") && op["texturePath"].is_string()) {
-                ctx.scene->textures[e.id] = Texture2D{ op["texturePath"].get<std::string>() };
+                scx.scene->textures[e.id] = Texture2D{ op["texturePath"].get<std::string>() };
             }
             created.insert(e.id);
         }
         else if (type == "set_transform") {
             uint32_t id = GetEntityId(op);
-            if (id && ctx.scene->transforms.contains(id)) {
-                auto& t = ctx.scene->transforms[id];
+            if (id && scx.scene->transforms.contains(id)) {
+                auto& t = scx.scene->transforms[id];
 
                 if (op.contains("position") && !op["position"].is_null()) {
                     auto p = op["position"];
                     t.position = { p[0].get<float>(), p[1].get<float>() };
                 }
 
-                if (op.contains("size") && !op["size"].is_null() && ctx.scene->sprites.contains(id)) {
+                if (op.contains("size") && !op["size"].is_null() && scx.scene->sprites.contains(id)) {
                     auto s = op["size"];
                     float w = std::max(1.f, s[0].get<float>());
                     float h = std::max(1.f, s[1].get<float>());
-                    ctx.scene->sprites[id].size = { w, h };
+                    scx.scene->sprites[id].size = { w, h };
                 }
 
                 if (op.contains("scale") && !op["scale"].is_null()) {
                     auto s = op["scale"];
                     float sx = s[0].get<float>(), sy = s[1].get<float>();
                     bool looksLikeSize = (std::fabs(sx) > 10.f) || (std::fabs(sy) > 10.f);
-                    if (looksLikeSize && ctx.scene->sprites.contains(id)) {
+                    if (looksLikeSize && scx.scene->sprites.contains(id)) {
                         float w = std::max(1.f, sx), h = std::max(1.f, sy);
-                        ctx.scene->sprites[id].size = { w, h };
+                        scx.scene->sprites[id].size = { w, h };
                         t.scale = { 1.f, 1.f };
                     }
                     else {
@@ -633,8 +636,8 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
             uint32_t id = GetEntityId(op);
             std::string comp = op.value("component", "");
 
-            if (id && comp == "Sprite" && ctx.scene->sprites.contains(id) && op.contains("value")) {
-                auto& sp = ctx.scene->sprites[id];
+            if (id && comp == "Sprite" && scx.scene->sprites.contains(id) && op.contains("value")) {
+                auto& sp = scx.scene->sprites[id];
                 const auto& value = op["value"];
 
                 if (value.contains("colorHex") && value["colorHex"].is_string()) {
@@ -660,7 +663,7 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
                 if (created.count(id) == 0) modified.insert(id);
             }
             else if (id && comp == "Texture2D" && op.contains("value") && op["value"].is_object()) {
-                auto& scene = *ctx.scene;
+                auto& scene = *scx.scene;
                 const auto& value = op["value"];
                 if (value.contains("path") && value["path"].is_string()) {
                     std::string newPath = value["path"].get<std::string>();
@@ -681,9 +684,12 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
         }
         else if (type == "remove_entity") {
             uint32_t id = GetEntityId(op);
-            if (id && ctx.scene) {
-                ctx.scene->DestroyEntity(Entity{ id });
-                if (ctx.selected.id == id) ctx.selected = {};
+            if (id && scx.scene) {
+                scx.scene->DestroyEntity(Entity{ id });
+
+                // limpiar selección si apunta a la entidad eliminada (EditorContext)
+                auto& edx = EditorContext::Get();
+                if (edx.selected.id == id) edx.selected = {};
 
                 created.erase(id);
                 modified.erase(id);
