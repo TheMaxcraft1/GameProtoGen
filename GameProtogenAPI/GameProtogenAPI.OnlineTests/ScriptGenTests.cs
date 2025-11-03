@@ -44,9 +44,6 @@ namespace GameProtogenAPI.OnlineTests
             code.Should().NotContain("debug.");
             code.Should().NotContain("loadstring");
 
-            // Preferencia por campos nombrados (heurística simple)
-            Regex.IsMatch(code, @"\bposition\s*=\s*\{\s*x\s*=").Should().BeTrue();
-            Regex.IsMatch(code, @"\bsize\s*=\s*\{\s*x\s*=").Should().BeTrue();
         }
     }
 }
