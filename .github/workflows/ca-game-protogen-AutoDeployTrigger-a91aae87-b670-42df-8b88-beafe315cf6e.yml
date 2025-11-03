@@ -5,7 +5,7 @@ on:
   # Automatically trigger it when detected changes in repo
   push:
     branches: 
-      [ 3ra-entrega ]
+      [ main ]
     paths:
     - '**'
     - '.github/workflows/ca-game-protogen-AutoDeployTrigger-a91aae87-b670-42df-8b88-beafe315cf6e.yml'
@@ -45,5 +45,6 @@ jobs:
           imageToBuild: default/[parameters('containerAppName')]:${{ github.sha }}
           _buildArgumentsKey_: |
             _buildArgumentsValues_
+
 
 
