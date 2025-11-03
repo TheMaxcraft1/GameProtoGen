@@ -87,6 +87,7 @@ public:
 
         // ApiClient (HTTPS con tu backend en 7223)
         auto client = std::make_shared<ApiClient>("https://localhost:7223");
+        //auto client = std::make_shared<ApiClient>("https://ca-game-protogen.purplehill-2f1636cc.brazilsouth.azurecontainerapps.io");
         client->SetVerifySsl(true);
         client->UseHttps(true);
         client->SetTimeouts(10, 180, 30);

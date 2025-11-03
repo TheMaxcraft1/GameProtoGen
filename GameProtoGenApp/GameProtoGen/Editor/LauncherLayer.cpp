@@ -84,6 +84,9 @@ bool LauncherLayer::TryAutoLogin() {
 
 void LauncherLayer::OnAttach() {
     EnsureSavesDir();
+    // Asegurar contexto activo en este hilo
+
+
     m_loggedIn = TryAutoLogin();
 
     m_LogoOK = m_LogoTex.loadFromFile("Internal/Brand/logo.png");

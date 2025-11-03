@@ -98,8 +98,9 @@ namespace GameProtogenAPI.AI.Orchestration
         {
             var items = new List<JsonElement>();
             var assetPaths = new List<string>();
+            var scriptPaths = new List<string>();
 
-            // 1) Corre asset_gen primero si está presente (para tener paths)
+            // 1) asset_gen primero (necesitamos paths)
             foreach (var a in agents)
             {
                 if (string.Equals(a, "asset_gen", StringComparison.OrdinalIgnoreCase))
@@ -110,17 +111,20 @@ namespace GameProtogenAPI.AI.Orchestration
                     assetPaths.AddRange(ExtractAssetPathsFromItem(item));
                 }
             }
-            // 1.5) script_gen (Lua) — se agrega tal cual al bundle
+
+            // 1.5) script_gen (Lua) — guardamos item y "predecimos" path Assets/Scripts/<fileName>
             foreach (var a in agents)
             {
                 if (string.Equals(a, "script_gen", StringComparison.OrdinalIgnoreCase))
                 {
                     var json = await RunScriptGenAsync(prompt, sceneJson, ct);
-                    items.Add(JsonDocument.Parse(json).RootElement.Clone());
+                    var item = JsonDocument.Parse(json).RootElement.Clone();
+                    items.Add(item);
+                    scriptPaths.AddRange(ExtractScriptPathsFromItem(item)); // ← NUEVO
                 }
             }
 
-            // 2) design_qa y scene_edit (inyectando assets si hay)
+            // 2) design_qa y scene_edit (inyectando assets + scripts si hay)
             foreach (var a in agents)
             {
                 if (string.Equals(a, "design_qa", StringComparison.OrdinalIgnoreCase))
@@ -131,17 +135,23 @@ namespace GameProtogenAPI.AI.Orchestration
                 else if (string.Equals(a, "scene_edit", StringComparison.OrdinalIgnoreCase))
                 {
                     var augmentedPrompt = prompt;
-                    if (assetPaths.Count > 0)
+
+                    if (assetPaths.Count > 0 || scriptPaths.Count > 0)
                     {
                         augmentedPrompt += "\n\n[ASSETS]\n";
                         for (int i = 0; i < assetPaths.Count; i++)
                             augmentedPrompt += $"- ASSET{i}:{assetPaths[i]}\n";
-                        augmentedPrompt += "Si el usuario pidió aplicarlas, usa estos ASSETs como texturePath en el plan (para entidades existentes en <modificar> y para nuevas en <agregar>).";
+                        for (int i = 0; i < scriptPaths.Count; i++)
+                            augmentedPrompt += $"- SCRIPT{i}:{scriptPaths[i]}\n";
+
+                        augmentedPrompt +=
+                            "Si el usuario pidió aplicarlas, usa estos ASSETs como texturePath y estos SCRIPTs como scriptPath en el plan " +
+                            "(para entidades existentes en <modificar> y para nuevas en <agregar>).";
                     }
+
                     var json = await RunSceneEditAsync(augmentedPrompt, sceneJson, ct);
                     items.Add(JsonDocument.Parse(json).RootElement.Clone());
                 }
-                // (extensible: code_gen / image_gen aquí)
             }
 
             // { kind:"bundle", items:[...] }
@@ -337,6 +347,19 @@ namespace GameProtogenAPI.AI.Orchestration
             if (!item.TryGetProperty("kind", out var k) || k.GetString() != "asset") return Array.Empty<string>();
             if (item.TryGetProperty("path", out var p) && p.ValueKind == JsonValueKind.String)
                 return new[] { p.GetString()! };
+            return Array.Empty<string>();
+        }
+
+        private static string[] ExtractScriptPathsFromItem(JsonElement item)
+        {
+            if (item.ValueKind != JsonValueKind.Object) return Array.Empty<string>();
+            if (!item.TryGetProperty("kind", out var k) || k.GetString() != "script") return Array.Empty<string>();
+            if (item.TryGetProperty("fileName", out var fn) && fn.ValueKind == JsonValueKind.String)
+            {
+                var fileName = fn.GetString();
+                if (!string.IsNullOrWhiteSpace(fileName))
+                    return new[] { $"Assets/Scripts/{fileName}" };
+            }
             return Array.Empty<string>();
         }
 

@@ -582,15 +582,18 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
             auto pos = op["pos"];
             auto size = op["size"];
             sf::Color col = TryParseColor(op, sf::Color(60, 60, 70, 255));
+
             Entity e = scx.scene->CreateEntity();
             scx.scene->transforms[e.id] = Transform{ {pos[0].get<float>(), pos[1].get<float>()}, {1.f,1.f}, 0.f };
             scx.scene->sprites[e.id] = Sprite{ {size[0].get<float>(), size[1].get<float>()}, col };
             scx.scene->colliders[e.id] = Collider{ {size[0].get<float>() * 0.5f, size[1].get<float>() * 0.5f}, {0.f,0.f} };
 
-            // NUEVO: textura opcional
+            // Textura opcional directa en la op (por compat con algunos synthesizers)
             if (op.contains("texturePath") && op["texturePath"].is_string()) {
                 scx.scene->textures[e.id] = Texture2D{ op["texturePath"].get<std::string>() };
+                Renderer2D::InvalidateTexture(op["texturePath"].get<std::string>());
             }
+
             created.insert(e.id);
         }
         else if (type == "set_transform") {
@@ -668,7 +671,6 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
                 if (value.contains("path") && value["path"].is_string()) {
                     std::string newPath = value["path"].get<std::string>();
 
-                    // crea o muta el componente
                     auto& tex = scene.textures[id];
                     std::string oldPath = tex.path;
                     tex.path = newPath;
@@ -677,6 +679,24 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
                     if (!oldPath.empty() && oldPath != newPath)
                         Renderer2D::InvalidateTexture(oldPath);
                     Renderer2D::InvalidateTexture(newPath);
+
+                    if (created.count(id) == 0) modified.insert(id);
+                }
+            }
+            else if (id && comp == "Script" && op.contains("value") && op["value"].is_object()) {
+                // NUEVO: asignación de script por path (simétrico a Texture2D)
+                auto& scene = *scx.scene;
+                const auto& value = op["value"];
+                if (value.contains("path") && value["path"].is_string()) {
+                    std::string newPath = value["path"].get<std::string>();
+
+                    auto& sc = scene.scripts[id];
+                    std::string oldPath = sc.path;
+                    sc.path = newPath;
+                    sc.inlineCode.clear(); // preferimos archivo si vino path
+                    sc.loaded = false;     // forzar recarga desde disco
+
+                    // (Opcional) Si usás algún caché de VM/bytecode, invalidalo acá.
 
                     if (created.count(id) == 0) modified.insert(id);
                 }
