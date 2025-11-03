@@ -21,6 +21,7 @@
 #include <imgui-SFML.h>
 #include <SFML/Graphics.hpp>   
 #include <Editor/EditorFonts.h>
+#include "Auth/JwtDisplayName.h"
 
 using std::filesystem::exists;
 using std::filesystem::directory_iterator;
@@ -89,6 +90,10 @@ bool LauncherLayer::TryAutoLogin() {
     if (edx.apiClient) {
         edx.apiClient->SetAccessToken(at);
     }
+
+    if (edx.tokenManager) {
+        m_displayName = DisplayNameFromIdToken(edx.tokenManager->IdToken());
+    }
     return true;
 }
 
@@ -122,6 +127,12 @@ void LauncherLayer::DoLoginInteractive() {
 
     if (!edx.tokenManager) edx.tokenManager = std::make_shared<TokenManager>(cfg);
     edx.tokenManager->OnInteractiveLogin(*tokens);
+
+    m_displayName.clear();
+    if (!tokens->id_token.empty())
+        m_displayName = DisplayNameFromIdToken(tokens->id_token);
+    else if (edx.tokenManager)
+        m_displayName = DisplayNameFromIdToken(edx.tokenManager->IdToken());
 
     edx.apiClient->SetAccessToken(tokens->access_token);
     edx.apiClient->SetTokenRefresher([mgr = edx.tokenManager]() -> std::optional<std::string> {
@@ -338,7 +349,10 @@ void LauncherLayer::OnGuiRender() {
         ImGui::TextDisabled("(necesaria para usar el editor y el chat)");
     }
     else {
-        ImGui::TextColored(ImVec4(0.1f, 0.6f, 0.1f, 1.f), "Estás logueado.");
+        if (!m_displayName.empty())
+            ImGui::TextColored(ImVec4(0.1f, 0.6f, 0.1f, 1.f), "Hola %s!", m_displayName.c_str());
+        else
+            ImGui::TextColored(ImVec4(0.1f, 0.6f, 0.1f, 1.f), "Sesión iniciada.");
     }
 
     ImGui::Dummy(ImVec2(0, 8));

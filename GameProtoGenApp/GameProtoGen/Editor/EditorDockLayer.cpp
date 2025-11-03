@@ -27,6 +27,7 @@
 #include <SFML/Graphics/Color.hpp>
 
 #include <nlohmann/json.hpp>
+#include <Auth/JwtDisplayName.h>
 
 // ======================== Helpers ========================
 namespace {
@@ -718,6 +719,35 @@ void EditorDockLayer::OnGuiRender() {
                 ImGui::EndDisabled();
             }
             ImGui::EndMenu();
+        }
+        // --- Usuario (derecha en la barra) ---
+        {
+            auto& edx = EditorContext::Get();
+            // Obtené el display name desde tu TokenManager (ver cambio previo)
+            std::string userName;
+            if (edx.tokenManager) {
+                userName = DisplayNameFromIdToken(edx.tokenManager->IdToken());
+            }
+            if (userName.empty()) userName = "Inicia sesión!";
+
+            ImGuiStyle& style = ImGui::GetStyle();
+
+            // Texto a mostrar (podés hacer un menú desplegable también)
+            const std::string userLabel = userName;
+
+            // Guardamos Y actual para no “saltar” verticalmente al mover X
+            const float savedY = ImGui::GetCursorPosY();
+
+            // Calculamos X para alinear a la derecha del menubar
+            const float textW = ImGui::CalcTextSize(userLabel.c_str()).x;
+            const float rightEdge = ImGui::GetWindowContentRegionMax().x; // borde derecho usable
+            const float targetX = rightEdge - textW - style.ItemSpacing.x; // un pequeño padding
+
+            // Movemos el cursor y dibujamos
+            ImGui::SameLine(0.0f, 0.0f);      // seguimos en la misma línea del menú
+            ImGui::SetCursorPosY(savedY);
+            ImGui::SetCursorPosX(std::max(targetX, ImGui::GetCursorPosX()));
+            ImGui::Text("%s", userLabel.c_str());
         }
         ImGui::EndMenuBar();
     }

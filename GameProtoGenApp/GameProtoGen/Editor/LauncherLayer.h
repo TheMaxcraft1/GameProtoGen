@@ -22,6 +22,7 @@ private:
     bool m_confirmDeleteModal = false;
     std::string m_toDeletePath;
     std::string m_deleteError;
+    std::string m_displayName;
 
     // Acciones
     void DoLoginInteractive();   // login + token manager + refresher

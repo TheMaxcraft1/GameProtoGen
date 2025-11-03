@@ -13,6 +13,7 @@ class TokenManager {
 public:
     struct State {
         std::string access_token;
+        std::string id_token;
         std::string refresh_token;
         // Momento (epoch seconds) en que expira el access_token
         long long access_expiry_epoch = 0;
@@ -27,6 +28,7 @@ public:
     void OnInteractiveLogin(const OidcTokens& t) {
         m_state.access_token = t.access_token;
         m_state.refresh_token = t.refresh_token;
+        m_state.id_token = t.id_token;
         // Guardamos el vencimiento como epoch seconds con pequeño skew
         const long long now = NowEpoch();
         const long long skew = 60;
@@ -41,6 +43,7 @@ public:
             if (!ifs) return false;
             nlohmann::json j; ifs >> j;
             m_state.access_token = j.value("access_token", "");
+            m_state.id_token = j.value("id_token", "");
             m_state.refresh_token = j.value("refresh_token", "");
             m_state.access_expiry_epoch = j.value("access_expiry_epoch", 0LL);
             return !(m_state.access_token.empty() && m_state.refresh_token.empty());
@@ -55,6 +58,7 @@ public:
             fs::create_directories(fs::path(m_path).parent_path());
             nlohmann::json j{
                 {"access_token", m_state.access_token},
+                {"id_token", m_state.id_token},
                 {"refresh_token", m_state.refresh_token},
                 {"access_expiry_epoch", m_state.access_expiry_epoch}
             };
@@ -68,6 +72,7 @@ public:
 
     // Devuelve el access token actual (puede estar vencido)
     const std::string& AccessToken() const { return m_state.access_token; }
+    const std::string& IdToken() const { return m_state.id_token; }
 
     // Intentá renovar si el access está por vencer o vencido.
     // Devuelve true si terminó con access válido (renovado o ya sano).
@@ -92,6 +97,8 @@ public:
             return std::nullopt;
         }
         m_state.access_token = t->access_token;
+        if (!t->id_token.empty()) 
+            m_state.id_token = t->id_token;
         if (!t->refresh_token.empty())
             m_state.refresh_token = t->refresh_token; // rotate si el IdP te dio uno nuevo
         const long long now = NowEpoch();

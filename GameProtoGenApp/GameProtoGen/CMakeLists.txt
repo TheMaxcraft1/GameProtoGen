@@ -190,6 +190,7 @@ if (BUILD_EDITOR)
       Auth/LoopbackServer.h
       Auth/LoopbackServer.cpp
       Auth/TokenManager.h
+      Auth/JwtDisplayName.h
       ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
   )
 
