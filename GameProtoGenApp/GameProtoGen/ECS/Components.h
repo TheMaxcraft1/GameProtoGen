@@ -22,6 +22,7 @@ struct Collider {
     // AABB simple relativo al centro del objeto
     sf::Vector2f halfExtents{ 50.f, 50.f };
     sf::Vector2f offset{ 0.f, 0.f };
+    bool isTrigger = false;
 };
 
 struct Physics2D {

@@ -3,8 +3,27 @@
 #include <SFML/Window/Keyboard.hpp>
 #include <algorithm>   // std::clamp (si lo necesitás)
 #include <string>      // ← necesitabas esto si usabas std::string en helpers (ya lo quitamos)
+#include <unordered_set>
+#include "Core/Log.h"
+#include "Systems/ScriptSystem.h"
 
 namespace Systems {
+
+    static std::unordered_set<uint64_t> s_prevOverlaps;
+    static std::unordered_set<uint64_t> s_currOverlaps;
+
+    static inline uint64_t PairKey(EntityID a, EntityID b) {
+        // dirigido (A → B). Si quisieras no dirigido: ordená min/max.
+        return (uint64_t(a) << 32) | uint64_t(b);
+    }
+
+    static inline void FireTriggerEnter(Scene& scene, EntityID triggerId, EntityID otherId) {
+        (void)scene;
+        Log::Info("[TRIGGER] enter  trigger=" + std::to_string(triggerId) +
+            " other=" + std::to_string(otherId));
+
+        Systems::ScriptSystem::OnTriggerEnter(scene, triggerId, otherId);
+    }
 
     // --- PlayerController: WASD / ←→ + Space ---
     void PlayerControllerSystem::Update(Scene& scene, float dt) {
@@ -107,8 +126,15 @@ namespace Systems {
         }
     }
 
-    // --- Dinámicos (con Physics2D) vs estáticos (sin Physics2D) ---
+    void CollisionSystem::ResetTriggers() {
+        s_prevOverlaps.clear();
+        s_currOverlaps.clear();
+    }
+
     void CollisionSystem::SolveAABB(Scene& scene) {
+        // Limpiamos los overlaps de este frame
+        s_currOverlaps.clear();
+
         for (auto& [idA, phA] : scene.physics) {
             if (!scene.transforms.contains(idA) || !scene.colliders.contains(idA)) continue;
 
@@ -154,7 +180,30 @@ namespace Systems {
                 const float oy = (heA.y + heB.y) - std::abs(d.y);
 
                 if (ox > 0.f && oy > 0.f) {
-                    // Resolver por eje de mínima penetración
+                    const bool aTrig = cA.isTrigger;
+                    const bool bTrig = cBref.isTrigger;
+
+                    if (aTrig || bTrig) {
+                        // Registrar overlaps para triggerEnter (sin resolver física)
+                        if (aTrig) {
+                            const uint64_t kAB = PairKey(idA, idB);
+                            if (!s_prevOverlaps.count(kAB)) {
+                                FireTriggerEnter(scene, idA, idB);
+                            }
+                            s_currOverlaps.insert(kAB);
+                        }
+                        if (bTrig) {
+                            const uint64_t kBA = PairKey(idB, idA);
+                            if (!s_prevOverlaps.count(kBA)) {
+                                FireTriggerEnter(scene, idB, idA);
+                            }
+                            s_currOverlaps.insert(kBA);
+                        }
+                        // Importante: no empujar al dinámico contra un trigger
+                        continue;
+                    }
+
+                    // Resolver por eje de mínima penetración (colisión física)
                     if (ox < oy) {
                         const float pushX = (d.x < 0.f ? -ox : ox);
                         tA.position.x -= pushX;
@@ -169,6 +218,9 @@ namespace Systems {
                 }
             }
         }
+
+        // Rotamos buffers para el próximo frame (lo que fue curr ahora es prev)
+        s_prevOverlaps.swap(s_currOverlaps);
     }
 
 

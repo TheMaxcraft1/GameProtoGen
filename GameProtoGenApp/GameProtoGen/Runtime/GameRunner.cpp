@@ -46,6 +46,8 @@ void GameRunner::EnterPlay(Scene& scene) {
         ph.onGround = false;
         // ph.velocity = {0.f, 0.f}; // si querés arrancar “quieto”
     }
+
+    Systems::CollisionSystem::ResetTriggers();
 }
 
 void GameRunner::ExitPlay(Scene& /*scene*/) {

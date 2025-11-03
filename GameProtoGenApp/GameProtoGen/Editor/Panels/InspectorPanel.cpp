@@ -318,6 +318,20 @@ static void DrawScriptEditor(Scene& scene, Entity e) {
     ImGui::PopID();
 }
 
+static void DrawColliderSection(Scene& scene, Entity e) {
+    if (!e) return;
+
+    ImGui::PushFont(EditorFonts::H1);
+    ImGui::SeparatorText("Collider");
+    ImGui::PopFont();
+
+    auto& c = scene.colliders[e.id];
+
+    ImGui::Checkbox("Disparador (trigger)", &c.isTrigger);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("No colisión física; solo eventos.");
+}
+
 void InspectorPanel::OnGuiRender() {
     auto& scx = SceneContext::Get();
     auto& edx = EditorContext::Get();
@@ -440,13 +454,8 @@ void InspectorPanel::OnGuiRender() {
             }
         }
 
-        // Sprite
         if (auto it = scx.scene->sprites.find(e.id); it != scx.scene->sprites.end()) {
             auto& s = it->second;
-
-            ImGui::PushFont(EditorFonts::H1);
-            ImGui::SeparatorText("Sprite");
-            ImGui::PopFont();
 
             ImGui::PushFont(EditorFonts::H2);
             ImGui::TextUnformatted("Tamaño:");
@@ -488,6 +497,7 @@ void InspectorPanel::OnGuiRender() {
         }
 
         if (scx.scene && edx.selected) {
+            DrawColliderSection(*scx.scene, edx.selected);
             DrawTexture2DEditor(*scx.scene, edx.selected);
             DrawScriptEditor(*scx.scene, edx.selected);
         }

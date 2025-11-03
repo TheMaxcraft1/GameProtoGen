@@ -23,6 +23,15 @@ void ScriptSystem::ResetVM() {
     if (g_vm) g_vm->Reset();
 }
 
+void ScriptSystem::OnTriggerEnter(Scene& scene, EntityID self, EntityID other) {
+    auto& vm = VM();
+    vm.BindScene(scene);
+    std::string err;
+    if (!vm.CallOnTriggerEnter(self, other, err)) {
+        Log::Error(std::string("[SCRIPT] Error on_trigger_enter: ") + err);
+    }
+}
+
 void ScriptSystem::Update(Scene& scene, float dt) {
     auto& vm = VM();
     vm.BindScene(scene);
