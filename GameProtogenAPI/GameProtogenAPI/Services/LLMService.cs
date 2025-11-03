@@ -38,8 +38,7 @@ namespace GameProtogenAPI.Services
             _kernel = Kernel.CreateBuilder()
                 //.AddAzureAIInferenceChatCompletion("grok-4-fast-reasoning", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
                 //.AddAzureAIInferenceChatCompletion("phi-4-mini-reasoning", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
-                .AddAzureAIInferenceChatCompletion("gpt-4o-mini", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
-
+                .AddAzureAIInferenceChatCompletion("gpt-5-mini", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
                 .Build();
         }
 
@@ -183,6 +182,7 @@ namespace GameProtogenAPI.Services
                   * Para entidades nuevas en <agregar>, agrega atributo texturePath="Assets/.../file.png" (elige el ASSET correcto).
                   * Para entidades existentes, crea items en <modificar> con:
                       <item id="X" propiedad="texturePath" valor="Assets/.../file.png"/>
+                  * En particular, si pide generar un sprite para el jugador, solo debería ser modificar a la entidad del jugador.
                 - Usa ids reales si los menciona el usuario. Si no se mencionan, identifica por tipo ("player", "platform") o por color/tamaño cuando sea obvio.
                 - Mantén coords en múltiplos de 32. No devuelvas nada fuera de <plan>...
 
@@ -277,6 +277,8 @@ namespace GameProtogenAPI.Services
                 - Convierte cualquier color por nombre o formato RGBA a "colorHex" #RRGGBBAA.
                 - Cuando muevas/ubiques plataformas, si aplicara, usa múltiplos de 32.
                 - No incluyas comentarios, ni texto fuera del JSON.
+                - Si el color no especifica alfa, usa AA=FF (opaco).
+                - NUNCA emitas AA=00 a menos que el usuario pida explícitamente transparencia/invisibilidad.
                 """;
 
             var user = $"""
