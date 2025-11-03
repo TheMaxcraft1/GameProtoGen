@@ -37,7 +37,9 @@ namespace GameProtogenAPI.Services
 
             _kernel = Kernel.CreateBuilder()
                 //.AddAzureAIInferenceChatCompletion("grok-4-fast-reasoning", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
-                .AddAzureAIInferenceChatCompletion("phi-4-mini-reasoning", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
+                //.AddAzureAIInferenceChatCompletion("phi-4-mini-reasoning", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
+                .AddAzureAIInferenceChatCompletion("gpt-4o-mini", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
+
                 .Build();
         }
 
