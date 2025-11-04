@@ -31,12 +31,17 @@ std::string ApiClient::BuildUrl(const std::string& path) const {
 
 std::optional<json> ApiClient::SendCommand(const std::string& prompt,
     const json& scene,
+    const std::vector<uint32_t>& selected,
     std::string* err) {
     // Preflight proactivo (opcional)
     if (m_OnPreflight) m_OnPreflight();
 
     const std::string url = BuildUrl("/chat/command");
-    json req = { {"prompt", prompt}, {"scene", scene} };
+    json req;
+    req["prompt"] = prompt;
+    req["scene"]  = scene;
+    if (!selected.empty()) 
+        req["selected"] = selected;
 
     const long xfer_ms =
         static_cast<long>((std::max)(m_ReadTimeoutSec, m_WriteTimeoutSec)) * 1000L;
@@ -89,7 +94,8 @@ std::optional<json> ApiClient::SendCommand(const std::string& prompt,
 }
 
 std::future<ApiClient::Result> ApiClient::SendCommandAsync(std::string prompt,
-    json scene) {
+    json scene,
+    std::vector<uint32_t> selected) {
     const std::string url = BuildUrl("/chat/command");
     const int connect_ms = m_ConnectTimeoutSec * 1000;
     const long xfer_ms =
@@ -104,8 +110,13 @@ std::future<ApiClient::Result> ApiClient::SendCommandAsync(std::string prompt,
         return hdr;
         };
 
-    // Preparamos el cuerpo una vez para reusarlo en el retry
-    std::string body = json({ {"prompt", std::move(prompt)}, {"scene", std::move(scene)} }).dump();
+    json req;
+    req["prompt"] = std::move(prompt);
+    req["scene"] = std::move(scene);
+    if (!selected.empty())
+        req["selected"] = selected;
+
+    std::string body = req.dump();
 
     // Preflight proactivo fuera del hilo (opcional)
     if (m_OnPreflight) m_OnPreflight();

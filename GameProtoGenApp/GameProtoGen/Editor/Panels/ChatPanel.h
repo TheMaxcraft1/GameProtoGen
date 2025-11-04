@@ -32,6 +32,7 @@ private:
     int m_TypingIndex = -1;  // índice de la burbuja "tipeando"
     bool m_RequestScrollToBottom = false;
     bool m_FocusInputNextFrame = false;
+    bool m_OnlySelectedScope = false; // false = aplicar a todos los multi; true = solo al enfocado
 
     // Render
     void RenderHistory();

@@ -51,6 +51,9 @@ private:
     float m_ScaleStartLen = 1.f;
     float m_ScaleSensitivity = 0.5f;
 
+    bool m_SelectingRect = false;
+    ImVec2 m_RectStart{ 0,0 }, m_RectEnd{ 0,0 };
+
     sf::Vector2f m_CamCenter{ 800.f, 450.f };
     float m_Grid = 32.f;          // snap/grilla (sigue activo pero ya no se muestra en UI)
 
@@ -65,8 +68,14 @@ private:
     EntityID PickEntityAt(const sf::Vector2f& worldPos) const;
 
     // Gizmos / dibujo
-    void DrawSelectionGizmo(sf::RenderTarget& rt) const;
     void DrawGrid(sf::RenderTarget& rt) const;
+
+    void DrawSelectionGizmos(sf::RenderTarget& rt) const; // reemplaza a DrawSelectionGizmo
+    // AABB del entity en coordenadas de mundo (retorna {0,0,0,0} si no hay shape)
+    sf::FloatRect EntityWorldAABB(EntityID id) const;
+
+    // Devuelve todos los entities cuya AABB intersecta con 'box' (mundo)
+    std::vector<EntityID> PickEntitiesInAABB(const sf::FloatRect& box) const;
 
     // Toolbar
     bool IconButtonPlayPause();
@@ -74,6 +83,7 @@ private:
     bool IconButtonPan(bool active);
     bool IconButtonRotate(bool active);
     bool IconButtonScale(bool active);
+    bool IconButtonSelectMany(bool active);
 
     // Consola
     bool m_AutoScroll = true;

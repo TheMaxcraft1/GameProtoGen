@@ -36,10 +36,26 @@ namespace GameProtogenAPI.Controllers
             }
             catch { }
 
+            // 🔹 Si hay selected, agregamos un bloque de “scope” al prompt
+            string finalPrompt = req.prompt;
+            if (req.selected is { Count: > 0 })
+            {
+                var ids = string.Join(", ", req.selected);
+                finalPrompt +=
+                    $"""
+
+                    [IMPORTANTE]
+                    Solo modifica entidades con estos IDs: [{ids}].
+                    Si la operación apunta a otros IDs, ignórala.
+                    No generes ni borres entidades fuera de ese conjunto.
+                    [/IMPORTANTE]
+                    """;
+            }
+
             string result;
             try
             {
-                result = await _orchestrator.RunAsync(req.prompt, sceneJson, ct);
+                result = await _orchestrator.RunAsync(finalPrompt, sceneJson, ct);
             }
             catch (Exception ex)
             {

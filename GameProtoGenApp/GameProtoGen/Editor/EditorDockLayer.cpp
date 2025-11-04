@@ -793,20 +793,87 @@ void EditorDockLayer::OnGuiRender() {
             }
         }
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D, false)) {
-            if (scx.scene && edx.selected && !IsPlayer(*scx.scene, edx.selected)) {
-                Entity newE = DuplicateEntity(*scx.scene, edx.selected, { 16.f,16.f });
-                if (newE) {
-                    edx.selected = newE;
-                    edx.requestSelectTool = true;
+            auto& scx = SceneContext::Get();
+            auto& edx = EditorContext::Get();
+            if (!scx.scene) return;
+
+            const sf::Vector2f kOffset{ 16.f, 16.f };
+
+            // 1) Construir lista base a duplicar
+            std::vector<EntityID> base;
+            base.reserve(edx.multiSelected.size() + 1);
+
+            if (!edx.multiSelected.empty()) {
+                // Si hay multi, usamos ese set
+                for (auto id : edx.multiSelected) {
+                    Entity e{ id };
+                    if (!IsPlayer(*scx.scene, e)) base.push_back(id);
                 }
             }
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {
-            if (scx.scene && edx.selected && !IsPlayer(*scx.scene, edx.selected)) {
-                scx.scene->DestroyEntity(edx.selected);
-                edx.selected = {};
+            else if (edx.selected) {
+                // Si no hay multi, usamos el seleccionado (si no es player)
+                if (!IsPlayer(*scx.scene, edx.selected))
+                    base.push_back(edx.selected.id);
             }
+
+            if (base.empty()) return;
+
+            // 2) Duplicar todos y recolectar nuevas IDs
+            std::vector<EntityID> copies;
+            copies.reserve(base.size());
+            for (auto id : base) {
+                Entity src{ id };
+                Entity dst = DuplicateEntity(*scx.scene, src, kOffset);
+                if (dst) copies.push_back(dst.id);
+            }
+
+            if (copies.empty()) return;
+
+            // 3) Actualizar selección: dejar seleccionadas SOLO las copias nuevas
+            edx.multiSelected.clear();
+            for (auto id : copies) edx.multiSelected.insert(id);
+
+            // Foco (primaria) en una de las nuevas
+            edx.selected = Entity{ copies.back() };
+
+            // Volver a herramienta Select para permitir arrastrar el grupo enseguida
+            edx.requestSelectTool = true;
+
+            Log::Info(std::string("[DUPLICATE] Duplicadas ")
+                + std::to_string((int)copies.size()) + " entidades; foco en copia "
+                + std::to_string(copies.back()));
         }
+        if (!playing && ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {
+            auto& scx = SceneContext::Get();
+            auto& edx = EditorContext::Get();
+            if (!scx.scene) return;
+
+            // 1) Armar lista a borrar
+            std::vector<EntityID> toDelete;
+            toDelete.reserve(edx.multiSelected.size() + 1);
+
+            if (!edx.multiSelected.empty()) {
+                for (auto id : edx.multiSelected) {
+                    if (!IsPlayer(*scx.scene, Entity{ id })) toDelete.push_back(id);
+                }
+            }
+            else if (edx.selected) {
+                if (!IsPlayer(*scx.scene, edx.selected)) toDelete.push_back(edx.selected.id);
+            }
+
+            // 2) Borrar
+            for (EntityID id : toDelete) {
+                scx.scene->DestroyEntity(Entity{ id }); // o DestroyEntity(id) según tu firma
+            }
+
+            // 3) Limpiar TODA la selección (sin fallback)
+            edx.selected = {};
+            edx.multiSelected.clear();
+
+            Log::Info(std::string("[DELETE] Eliminadas ")
+                + std::to_string((int)toDelete.size()) + " entidades; selección limpia.");
+        }
+    
     }
 
     // ── DockSpace + layout inicial ─────────────────────────────────────────
