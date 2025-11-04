@@ -520,6 +520,9 @@ namespace GameProtogenAPI.Services
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Fallo generando imagen");
+                if (ex.Message.Contains("HTTP 400 (image_generation_user_error: moderation_blocked)"))
+                    return System.Text.Json.JsonSerializer.Serialize(new { kind = "text", message = "El contenido solicitado no cumple con las políticas de uso. No intentes generar imagenes de marcas regitradas." });
+
                 return System.Text.Json.JsonSerializer.Serialize(new { kind = "text", message = $"No pude generar la imagen: {ex.Message}" });
             }
 
