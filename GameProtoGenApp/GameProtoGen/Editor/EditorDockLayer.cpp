@@ -674,11 +674,11 @@ void EditorDockLayer::OnGuiRender() {
             if (ImGui::MenuItem("Guardar", "Ctrl+S")) DoSave();
             if (ImGui::MenuItem("Cargar", "Ctrl+O")) DoLoad();
             ImGui::Separator();
-            if (ImGui::MenuItem("Exportar ejecutable…")) {
+            if (ImGui::MenuItem("Exportar ejecutable")) {
                 DoExportExecutable();
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Iniciar sesión…")) {
+            if (ImGui::MenuItem("Iniciar sesión")) {
                 DoLoginInteractive();
             }
             ImGui::Separator();
@@ -699,7 +699,7 @@ void EditorDockLayer::OnGuiRender() {
                     edx.selected = e;
                 }
             }
-            if (ImGui::MenuItem("Crear plataforma", "Ctrl+N")) {
+            if (ImGui::MenuItem("Crear plataforma")) {
                 if (scx.scene) {
                     const sf::Vector2f spawnPos = scx.cameraCenter;
                     Entity e = SpawnPlatform(*scx.scene, spawnPos, { 200.f, 50.f });

@@ -1,10 +1,10 @@
 #include "PhysicsSystem.h"
 #include "ECS/Components.h"
 #include <SFML/Window/Keyboard.hpp>
-#include <algorithm>   // std::clamp (si lo necesitás)
+#include <algorithm>   // std::clamp
 #include <string>
 #include <unordered_set>
-#include <vector>      // <-- NUEVO: buffer de eventos
+#include <vector>      // buffer de eventos
 #include "Core/Log.h"
 #include "Systems/ScriptSystem.h"
 
@@ -132,13 +132,13 @@ namespace Systems {
     void CollisionSystem::ResetTriggers() {
         s_prevOverlaps.clear();
         s_currOverlaps.clear();
-        s_pendingTriggerEnter.clear(); // <-- NUEVO
+        s_pendingTriggerEnter.clear();
     }
 
     void CollisionSystem::SolveAABB(Scene& scene) {
         // Limpiamos los overlaps de este frame
         s_currOverlaps.clear();
-        s_pendingTriggerEnter.clear(); // <-- NUEVO: vaciar buffer por frame
+        s_pendingTriggerEnter.clear(); // vaciar buffer por frame
 
         for (auto& [idA, phA] : scene.physics) {
             if (!scene.transforms.contains(idA) || !scene.colliders.contains(idA)) continue;
@@ -194,14 +194,14 @@ namespace Systems {
                             const uint64_t kAB = PairKey(idA, idB);
                             if (!s_prevOverlaps.count(kAB)) {
                                 // en vez de disparar YA, bufferizamos
-                                s_pendingTriggerEnter.push_back({ idA, idB }); // <-- NUEVO
+                                s_pendingTriggerEnter.push_back({ idA, idB });
                             }
                             s_currOverlaps.insert(kAB);
                         }
                         if (bTrig) {
                             const uint64_t kBA = PairKey(idB, idA);
                             if (!s_prevOverlaps.count(kBA)) {
-                                s_pendingTriggerEnter.push_back({ idB, idA }); // <-- NUEVO
+                                s_pendingTriggerEnter.push_back({ idB, idA });
                             }
                             s_currOverlaps.insert(kBA);
                         }

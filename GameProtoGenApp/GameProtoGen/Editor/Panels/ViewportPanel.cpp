@@ -1,6 +1,6 @@
 #include "ViewportPanel.h"
 #include "Runtime/SceneContext.h"
-#include "Runtime/EditorContext.h"   // ⬅️ nuevo
+#include "Runtime/EditorContext.h"
 #include "Runtime/GameRunner.h"
 
 #include <imgui.h>
@@ -159,6 +159,8 @@ void ViewportPanel::OnGuiRender() {
     static ImVec2         s_BoxStart{ 0,0 }, s_BoxEnd{ 0,0 };
     static bool           s_GroupDragging = false;
     static sf::Vector2f   s_LastWorld{ 0.f, 0.f };
+    static sf::Vector2f   s_GroupStartWorld{ 0.f, 0.f };
+    static sf::Vector2f   s_GroupLastSnapped{ 0.f, 0.f };
 
     // Se usa cuando se duplica una entidad.
     if (edx.requestSelectTool) {
@@ -713,21 +715,52 @@ void ViewportPanel::OnGuiRender() {
                                 if (!s_GroupDragging && (std::fabs(io.MouseDelta.x) > 0.0f || std::fabs(io.MouseDelta.y) > 0.0f)) {
                                     s_GroupDragging = true;
                                     s_LastWorld = world;
+
+                                    // ⬇️ reset de acumuladores de snap
+                                    s_GroupStartWorld = world;
+                                    s_GroupLastSnapped = { 0.f, 0.f };
                                 }
                                 if (s_GroupDragging) {
-                                    sf::Vector2f delta = world - s_LastWorld;
-                                    if (delta.x != 0.f || delta.y != 0.f) {
-                                        for (auto id : edx.multiSelected) {
-                                            if (!scx.scene->transforms.contains(id)) continue;
-                                            auto& t = scx.scene->transforms[id];
-                                            t.position += delta;
-                                            if (scx.scene->physics.contains(id)) {
-                                                auto& ph = scx.scene->physics[id];
-                                                ph.velocity = { 0.f, 0.f };
-                                                ph.onGround = false;
+                                    // ⬇️ SNAP por grilla si hay m_Grid, sino comportamiento viejo
+                                    if (m_Grid > 0.0f) {
+                                        sf::Vector2f accum = world - s_GroupStartWorld;
+                                        sf::Vector2f snapped{
+                                            std::round(accum.x / m_Grid) * m_Grid,
+                                            std::round(accum.y / m_Grid) * m_Grid
+                                        };
+                                        sf::Vector2f deltaSnap = snapped - s_GroupLastSnapped;
+
+                                        if (deltaSnap.x != 0.f || deltaSnap.y != 0.f) {
+                                            for (auto id : edx.multiSelected) {
+                                                if (!scx.scene->transforms.contains(id)) continue;
+                                                auto& t = scx.scene->transforms[id];
+                                                t.position += deltaSnap;
+
+                                                if (scx.scene->physics.contains(id)) {
+                                                    auto& ph = scx.scene->physics[id];
+                                                    ph.velocity = { 0.f, 0.f };
+                                                    ph.onGround = false;
+                                                }
                                             }
+                                            s_GroupLastSnapped = snapped;
                                         }
-                                        s_LastWorld = world;
+                                    }
+                                    else {
+                                        // comportamiento original sin snap
+                                        sf::Vector2f delta = world - s_LastWorld;
+                                        if (delta.x != 0.f || delta.y != 0.f) {
+                                            for (auto id : edx.multiSelected) {
+                                                if (!scx.scene->transforms.contains(id)) continue;
+                                                auto& t = scx.scene->transforms[id];
+                                                t.position += delta;
+                                                if (scx.scene->physics.contains(id)) {
+                                                    auto& ph = scx.scene->physics[id];
+                                                    ph.velocity = { 0.f, 0.f };
+                                                    ph.onGround = false;
+                                                }
+                                            }
+                                            s_LastWorld = world;
+                                        }
                                     }
                                 }
                             }

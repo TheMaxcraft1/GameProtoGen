@@ -1,6 +1,6 @@
 #include "InspectorPanel.h"
 #include "Runtime/SceneContext.h"
-#include "Runtime/EditorContext.h"   // ⬅️ nuevo
+#include "Runtime/EditorContext.h"
 #include "ECS/Components.h"
 #include "Editor/EditorFonts.h"
 #include "Systems/Renderer2D.h"

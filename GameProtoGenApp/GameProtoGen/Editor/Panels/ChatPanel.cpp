@@ -473,7 +473,7 @@ void ChatPanel::RenderHistory() {
     static bool s_CopyInit = false;
     if (!s_CopyInit) {
         s_CopyInit = true;
-        s_CopyOk = s_CopyTex.loadFromFile("Assets/Icons/copy.png");
+        s_CopyOk = s_CopyTex.loadFromFile("Internal/Icons/copy.png");
         s_CopyTex.setSmooth(true);
     }
 
@@ -729,7 +729,7 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
                 }
             }
             else if (id && comp == "Script" && op.contains("value") && op["value"].is_object()) {
-                // NUEVO: asignación de script por path (simétrico a Texture2D)
+                // asignación de script por path (simétrico a Texture2D)
                 auto& scene = *scx.scene;
                 const auto& value = op["value"];
                 if (value.contains("path") && value["path"].is_string()) {

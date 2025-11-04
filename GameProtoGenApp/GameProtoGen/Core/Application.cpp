@@ -55,14 +55,14 @@ namespace gp {
         layer->OnAttach();
     }
 
-    void Application::PopLayer(Layer* layer) {   // <-- NUEVO
+    void Application::PopLayer(Layer* layer) {
         // No removemos directo para no invalidar iteradores si se llama
         // desde OnGuiRender/OnUpdate. Lo encolamos.
         if (!layer) return;
         m_PendingRemove.push_back(layer);
     }
 
-    void Application::FlushPending() {           // <-- NUEVO
+    void Application::FlushPending() {
         if (m_PendingRemove.empty()) return;
 
         for (Layer* doomed : m_PendingRemove) {
