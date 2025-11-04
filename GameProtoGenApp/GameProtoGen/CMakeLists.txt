@@ -4,6 +4,8 @@ project(GameProtoGen LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(APP_ICON_RC "${CMAKE_SOURCE_DIR}/Internal/Brand/appicon.rc")
+
 # Salidas predecibles
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -192,6 +194,7 @@ if (BUILD_EDITOR)
       Auth/TokenManager.h
       Auth/JwtDisplayName.h
       ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
+      $<$<PLATFORM_ID:Windows>:${APP_ICON_RC}> 
   )
 
   target_link_libraries(GameProtoGen PRIVATE
@@ -236,6 +239,7 @@ endif()
 if (BUILD_PLAYER)
   add_executable(GameProtoGenPlayer
       Runtime/PlayerMain.cpp
+      $<$<PLATFORM_ID:Windows>:${APP_ICON_RC}> 
   )
 
   target_link_libraries(GameProtoGenPlayer PRIVATE gp_runtime)

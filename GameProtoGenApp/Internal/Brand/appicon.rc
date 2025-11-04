@@ -1,0 +1,3 @@
+// Recurso de icono para Windows
+// El identificador IDI_APP_ICON es 1 por simplicidad
+IDI_APP_ICON ICON "app.ico"
