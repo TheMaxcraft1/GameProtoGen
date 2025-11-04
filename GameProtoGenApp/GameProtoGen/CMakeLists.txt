@@ -171,7 +171,7 @@ target_link_libraries(gp_runtime PUBLIC
 #   EJECUTABLE EDITOR: GameProtoGen
 # ======================================
 if (BUILD_EDITOR)
-  add_executable(GameProtoGen Win32
+  add_executable(GameProtoGen
       Core/Application.cpp
       Editor/EditorApp.cpp
       Editor/Panels/ViewportPanel.cpp
@@ -237,7 +237,7 @@ endif()
 #   EJECUTABLE PLAYER: GameProtoGenPlayer
 # ======================================
 if (BUILD_PLAYER)
-  add_executable(GameProtoGenPlayer Win32
+  add_executable(GameProtoGenPlayer
       Runtime/PlayerMain.cpp
       $<$<PLATFORM_ID:Windows>:${APP_ICON_RC}> 
   )

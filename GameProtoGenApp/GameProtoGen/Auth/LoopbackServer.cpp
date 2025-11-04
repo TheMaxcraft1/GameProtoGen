@@ -23,7 +23,7 @@ bool LoopbackServer::Start() {
             if (req.has_param("state")) m_State = req.get_param_value("state");
 
             res.set_content(
-                "<html><body><h3>Login OK</h3><p>Ya podés volver a la app.</p></body></html>",
+                "<html><body><h3>Login OK</h3><p>Ya puedes volver a la app.</p></body></html>",
                 "text/html"
             );
 
