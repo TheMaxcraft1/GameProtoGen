@@ -29,4 +29,4 @@ namespace gp {
         sf::Vector2i m_LastWndPos{ 100, 100 };
     };
 
-} // namespace gp
+}

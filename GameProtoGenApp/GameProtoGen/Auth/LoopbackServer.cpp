@@ -44,7 +44,7 @@ bool LoopbackServer::Start() {
             int port = pick_ephemeral_port();
             for (const char* h : hosts) {
                 if (svr.bind_to_port(h, port)) {
-                    m_Host = h;          // <- recordá el host que funcionó
+                    m_Host = h;
                     m_Port = port;
                     break;
                 }

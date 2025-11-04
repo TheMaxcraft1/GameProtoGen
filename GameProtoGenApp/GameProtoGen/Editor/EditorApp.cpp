@@ -1,4 +1,3 @@
-// GameProtoGenApp/GameProtoGen/Editor/EditorApp.cpp
 #include "Core/Application.h"
 #include "Core/SFMLWindow.h"
 #include "Panels/InspectorPanel.h"
@@ -119,7 +118,7 @@ public:
             edx.tokenManager->EnsureFresh();
         }
 
-        // Importante: arrancamos con el Launcher (no montes Viewport/Inspector/Chat acá)
+        // Importante: arrancamos con el Launcher
         gp::Application::Get().SetMode(gp::Application::Mode::Hub);
         PushLayer(new LauncherLayer());
         win.SetMaximized(false);
@@ -134,5 +133,3 @@ int main() {
     app.Run();
 }
 
-// // Si querés WinMain:
-// // int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) { return main(); }

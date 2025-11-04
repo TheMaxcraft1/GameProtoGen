@@ -38,7 +38,7 @@ struct PlayerController {
 };
 
 struct Script {
-    std::string path;       // Ruta a .lua (opcional)
-    std::string inlineCode; // Código embebido (opcional)
+    std::string path;       // Ruta a .lua 
+    std::string inlineCode; // Código embebido 
     bool loaded = false;    // ¿ya se corrió on_spawn?
 };

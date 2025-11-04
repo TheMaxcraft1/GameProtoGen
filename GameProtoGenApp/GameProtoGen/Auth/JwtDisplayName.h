@@ -30,7 +30,6 @@ inline std::string DisplayNameFromClaims(const nlohmann::json& c) {
         return c["preferred_username"].get<std::string>();
     if (c.contains("emails") && c["emails"].is_array() && !c["emails"].empty() && c["emails"][0].is_string())
         return c["emails"][0].get<std::string>();
-    // Por si usás atributos custom de B2C (extension_XXX)
     for (auto it = c.begin(); it != c.end(); ++it) {
         if (it.key().rfind("extension_", 0) == 0 && it.value().is_string())
             return it.value().get<std::string>();

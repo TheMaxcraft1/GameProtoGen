@@ -51,7 +51,6 @@ namespace gp {
 
     void Application::PushLayer(Layer* layer) {
         m_Layers.emplace_back(layer);
-        // Si querés OnAttach inmediato para las nuevas:
         layer->OnAttach();
     }
 
@@ -81,4 +80,4 @@ namespace gp {
         }
     }
 
-} // namespace gp
+}

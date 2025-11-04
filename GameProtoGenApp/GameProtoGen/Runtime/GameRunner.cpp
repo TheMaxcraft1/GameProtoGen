@@ -17,8 +17,6 @@ void GameRunner::Step(Scene& scene, float dt) {
     Systems::ScriptSystem::Update(scene, dt);
     Systems::PhysicsSystem::Update(scene, dt);
     Systems::CollisionSystem::SolveAABB(scene);
-    // Si usás “suelo infinito” además de plataformas estáticas:
-    // Systems::CollisionSystem::SolveGround(scene, 900.f); // opcional
 }
 
 void GameRunner::Render(const Scene& scene,
@@ -48,10 +46,10 @@ void GameRunner::EnterPlay(Scene& scene) {
     Systems::ScriptSystem::ResetVM();
     for (auto& [id, sc] : scene.scripts) sc.loaded = false;
 
-    // (Opcional) limpiar estados físicos transitorios
+    // limpiar estados físicos transitorios
     for (auto& [id, ph] : scene.physics) {
         ph.onGround = false;
-        // ph.velocity = {0.f, 0.f}; // si querés arrancar “quieto”
+
     }
 
     Systems::CollisionSystem::ResetTriggers();
@@ -64,14 +62,14 @@ void GameRunner::ExitPlay(Scene& scene) {
     // 2) Limpiar flags/eventos transitorios de colisiones/trigger
     Systems::CollisionSystem::ResetTriggers();
 
-    // 3) (Opcional) normalizar estado físico efímero
-    //    No toques posiciones/escena “de diseño” acá.
+    // 3)  normalizar estado físico efímero
+    //    No tocar posiciones/escena “de diseño” acá.
     for (auto& [id, ph] : scene.physics) {
         ph.onGround = false;
-        // ph.velocity = {0.f, 0.f}; // ← descomentá si querés salir sin inercias
+
     }
 
-    // 4) (Recomendado) cache gráfico: si cambiaste assets durante Play,
+    // 4)  cache gráfico: si cambiamos assets durante Play,
     //    al volver a edición forzás un reload limpio.
     Renderer2D::ClearTextureCache();
 }

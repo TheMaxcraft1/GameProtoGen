@@ -180,11 +180,6 @@ namespace {
             try_add(sc.path, "script");
         }
 
-        // 3) (Opcional) Si tu Sprite tiene un campo con ruta de imagen (descomenta si aplica)
-        // for (const auto& [id, spr] : scene.sprites) {
-        //     if (!spr.imagePath.empty()) try_add(spr.imagePath, "sprite");
-        // }
-
         return out;
     }
 
@@ -454,15 +449,13 @@ namespace {
             scene.physics[dst.id] = p;
         }
 
-        // 🔹 Texture (conserva el path para que apunte al mismo asset)
+        //  Texture (conserva el path para que apunte al mismo asset)
         //    Esto NO copia archivos; solo duplica el componente con su ruta.
         if (auto it = scene.textures.find(src.id); it != scene.textures.end()) {
             scene.textures[dst.id] = it->second;
-            // opcional: si tu struct tiene campos de handle/cached, podrías invalidarlos aquí
-            // scene.textures[dst.id].handle = nullptr; // si aplica a tu implementación
         }
 
-        // 🔹 Script (respeta path o inlineCode; fuerza reload)
+        // Script (respeta path o inlineCode; fuerza reload)
         if (auto it = scene.scripts.find(src.id); it != scene.scripts.end()) {
             Script sc = it->second;      // copia completa (path e inlineCode)
             sc.loaded = false;           // asegura que el runtime/editor lo recargue

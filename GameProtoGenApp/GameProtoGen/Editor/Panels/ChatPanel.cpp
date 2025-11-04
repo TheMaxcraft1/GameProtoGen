@@ -86,7 +86,7 @@ static bool SaveBase64ToFile(const std::string& base64, const std::string& outPa
     }
 }
 
-// --- Helpers locales para dibujar iconos como botón (misma técnica que usás en otro componente) ---
+// --- Helpers locales para dibujar iconos como botón  ---
 static ImVec2 FitIconHeight(const sf::Texture& tex, float btnH) {
     const auto size = tex.getSize();
     if (size.y == 0) return ImVec2(btnH, btnH);
@@ -530,7 +530,7 @@ void ChatPanel::RenderHistory() {
                 float iconH = 18.0f;
                 ImVec2 iconSz = s_CopyOk ? FitIconHeight(s_CopyTex, iconH) : ImVec2(40.0f, iconH);
 
-                // ✅ Posicionar el botón a la derecha en local
+                // Posicionar el botón a la derecha en local
                 ImGui::SetCursorPosX(x0 + innerW - iconSz.x);
 
                 const double now = (double)ImGui::GetTime();
@@ -741,8 +741,6 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
                     sc.inlineCode.clear(); // preferimos archivo si vino path
                     sc.loaded = false;     // forzar recarga desde disco
 
-                    // (Opcional) Si usás algún caché de VM/bytecode, invalidalo acá.
-
                     if (created.count(id) == 0) modified.insert(id);
                 }
             }
@@ -756,13 +754,12 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
                         auto sz = scene.sprites[id].size;
                         he = { std::max(1.f, sz.x * 0.5f), std::max(1.f, sz.y * 0.5f) };
                     }
-                    scene.colliders[id] = Collider{ he, {0.f,0.f} /*, .isTrigger = false si tu struct lo tiene */ };
+                    scene.colliders[id] = Collider{ he, {0.f,0.f} };
                 }
 
                 auto& col = scene.colliders[id];
                 const auto& value = op["value"];
 
-                // ✅ ÚNICO campo permitido: isTrigger
                 if (value.contains("isTrigger") && value["isTrigger"].is_boolean()) {
                     col.isTrigger = value["isTrigger"].get<bool>();
                     if (created.count(id) == 0) modified.insert(id);

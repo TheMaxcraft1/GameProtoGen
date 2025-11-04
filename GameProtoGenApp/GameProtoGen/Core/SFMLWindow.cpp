@@ -95,4 +95,4 @@ namespace gp {
         m_LastWndPos = { x, y };
     }
 
-} // namespace gp
+}

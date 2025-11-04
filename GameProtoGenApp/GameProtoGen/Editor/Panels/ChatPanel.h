@@ -1,4 +1,3 @@
-// GameProtoGen/Headers/ChatPanel.h
 #pragma once
 #include "Core/Application.h"
 #include "Net/ApiClient.h"

@@ -18,7 +18,6 @@ namespace Systems {
     static std::vector<TriggerEvt> s_pendingTriggerEnter;
 
     static inline uint64_t PairKey(EntityID a, EntityID b) {
-        // dirigido (A → B). Si quisieras no dirigido: ordená min/max.
         return (uint64_t(a) << 32) | uint64_t(b);
     }
 
@@ -32,7 +31,7 @@ namespace Systems {
     void PlayerControllerSystem::Update(Scene& scene, float dt) {
         (void)dt;
 
-        // Tomamos el primer entity que tenga PlayerController (MVP)
+        // Tomamos el primer entity que tenga PlayerController
         EntityID playerId = 0;
         for (auto& [id, pc] : scene.playerControllers) {
             (void)pc;
@@ -241,4 +240,4 @@ namespace Systems {
         s_prevOverlaps.swap(s_currOverlaps);
     }
 
-} // namespace Systems
+} 

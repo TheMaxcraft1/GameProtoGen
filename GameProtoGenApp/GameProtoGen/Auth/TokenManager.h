@@ -100,7 +100,7 @@ public:
         if (!t->id_token.empty()) 
             m_state.id_token = t->id_token;
         if (!t->refresh_token.empty())
-            m_state.refresh_token = t->refresh_token; // rotate si el IdP te dio uno nuevo
+            m_state.refresh_token = t->refresh_token; // rotate si el IdP dio uno nuevo
         const long long now = NowEpoch();
         const long long skew = 60;
         m_state.access_expiry_epoch = now + (t->expires_in > 0 ? (t->expires_in - (int)skew) : 300);

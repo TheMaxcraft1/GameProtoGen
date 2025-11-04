@@ -365,7 +365,6 @@ void LauncherLayer::OnGuiRender() {
     ImGui::Separator();
 
     // Acciones
-    // Acciones
     ImGui::BeginDisabled(!m_loggedIn);
     if (ImGui::Button("Nuevo proyecto")) {
         m_selected.clear();
