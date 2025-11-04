@@ -552,6 +552,7 @@ namespace GameProtogenAPI.Services
 
                             Target VM (Lua 5.4, sol2). Scripts run in an environment with:
                               - Global: this_id (uint)
+                              - Global function: gameReset()  -- Reloads the current scene from disk and restarts play. Call at end-of-game.
                               - Optional callbacks:
                                   function on_spawn() end
                                   function on_update(dt) end   -- dt in seconds (float)
@@ -587,6 +588,11 @@ namespace GameProtogenAPI.Services
                               - Comments can match user language; code is Lua.
                               - If user asks for trigger enter logic, as collecting a coin, use on_trigger_enter callback.
                               - Assume that Collider is already with isTrigger=true (do not change halfExtents/offset).
+
+                            Win/Lose & gameReset:
+                              - If the user specifies a win or lose condition (e.g., "reach goal", "timer expired", "lives==0", "player fell below y", "collect N items"), implement detection in on_update (and/or on_trigger_enter when relevant).
+                              - On first detection of victory or defeat, call gameReset() to restart the scene.
+                              - Never change scene paths or attempt to persist state across resets from Lua.
 
                             Deliver JSON only (no fences, no extra text).
                         """;

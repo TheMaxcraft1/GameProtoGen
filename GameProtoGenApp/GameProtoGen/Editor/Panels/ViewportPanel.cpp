@@ -9,6 +9,8 @@
 #include <optional>
 #include <cmath>
 #include <algorithm>
+#include "ECS/SceneSerializer.h"
+#include <filesystem>
 
 std::vector<std::string> ViewportPanel::s_Log{};  // ← DEFINICIÓN ÚNICA
 
@@ -35,6 +37,7 @@ void ViewportPanel::OnAttach() {
     m_IcoPan.setSmooth(true);
     m_IcoRotate.setSmooth(true);
     m_IcoScale.setSmooth(true);
+
 }
 
 void ViewportPanel::EnsureRT() {
@@ -148,6 +151,9 @@ void ViewportPanel::OnGuiRender() {
     auto& scx = SceneContext::Get();
     auto& edx = EditorContext::Get();
 
+    if (!edx.projectPath.empty())
+        GameRunner::SetScenePath(edx.projectPath);
+
     // ---------- estado local para marquee y drag de grupo (persisten entre frames) ----------
     static bool           s_BoxSelecting = false;
     static ImVec2         s_BoxStart{ 0,0 }, s_BoxEnd{ 0,0 };
@@ -178,6 +184,13 @@ void ViewportPanel::OnGuiRender() {
             edx.runtime.sceneBackup = std::make_shared<Scene>(*scx.scene);
             edx.runtime.cameraBackup = m_CamCenter;
             edx.runtime.selectedBackup = edx.selected;
+            std::string path = edx.projectPath;
+
+            if (!SceneSerializer::Save(*scx.scene, edx.projectPath)) {
+                AppendLog(std::string("❌ No se pudo guardar la escena en: ") + path);
+                // No entrar en Play si no se pudo guardar
+                return;
+            }
 
             GameRunner::EnterPlay(*scx.scene);
             m_Playing = true;

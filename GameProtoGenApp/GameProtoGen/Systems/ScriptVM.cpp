@@ -1,6 +1,7 @@
 #include "ScriptVM.h"
 #include <sstream>
 #include "Core/Log.h"
+#include "Runtime/GameRunner.h"
 
 ScriptVM::ScriptVM() : m_L(std::make_unique<sol::state>()) {
     auto& L = *m_L;
@@ -85,6 +86,11 @@ bool ScriptVM::CallOnUpdate(EntityID id, float dt, std::string& err) {
 void ScriptVM::RegisterApi() {
     auto& L = *m_L;
     L["ecs"] = L.create_table();
+
+    L.set_function("gameReset", [this]() -> bool {
+        if (!m_scene) return false;
+        return GameRunner::ReloadFromDisk(*m_scene);
+        });
 
     L.set_function("print", [&L](sol::variadic_args va) {
         std::ostringstream oss;

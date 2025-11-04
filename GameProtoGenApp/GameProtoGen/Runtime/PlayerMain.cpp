@@ -46,6 +46,7 @@ int main(int argc, char** argv) {
     // Carga de escena
     Scene scene;
     const path scenePath = DetectScenePath(argc, argv);
+    GameRunner::SetScenePath(scenePath.string());
     if (!exists(scenePath) || !SceneSerializer::Load(scene, scenePath.string())) {
         std::cerr << "[PLAYER] No se pudo cargar la escena desde: " << scenePath << "\n";
         // Semilla mínima

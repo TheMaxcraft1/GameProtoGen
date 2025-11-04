@@ -3,6 +3,13 @@
 #include "Systems/ScriptSystem.h"
 #include "Systems/Renderer2D.h"
 #include <SFML/Graphics.hpp>
+#include "ECS/SceneSerializer.h"
+#include "Core/Log.h"
+
+std::string s_scenePath = "scene.json";
+
+void GameRunner::SetScenePath(std::string path) { s_scenePath = std::move(path); }
+const std::string& GameRunner::GetScenePath() { return s_scenePath; }
 
 void GameRunner::Step(Scene& scene, float dt) {
     // Orden recomendado: input -> scripts -> física -> colisiones
@@ -67,4 +74,17 @@ void GameRunner::ExitPlay(Scene& scene) {
     // 4) (Recomendado) cache gráfico: si cambiaste assets durante Play,
     //    al volver a edición forzás un reload limpio.
     Renderer2D::ClearTextureCache();
+}
+
+bool GameRunner::ReloadFromDisk(Scene& scene) {
+    Scene tmp;
+    if (!SceneSerializer::Load(tmp, s_scenePath)) {
+        Log::Error(std::string("[RESET] No se pudo cargar: ") + s_scenePath);
+        return false;
+    }
+    scene = std::move(tmp);
+    Renderer2D::ClearTextureCache();
+    EnterPlay(scene); // rearmar VM/estados para Play
+    Log::Info(std::string("[RESET] Reload OK desde: ") + s_scenePath);
+    return true;
 }

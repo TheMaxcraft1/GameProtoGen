@@ -83,7 +83,6 @@ private:
     bool IconButtonPan(bool active);
     bool IconButtonRotate(bool active);
     bool IconButtonScale(bool active);
-    bool IconButtonSelectMany(bool active);
 
     // Consola
     bool m_AutoScroll = true;
