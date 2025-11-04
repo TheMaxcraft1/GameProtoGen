@@ -9,7 +9,7 @@ public:
     static bool Save(const Scene& scene, const std::string& path);
     static bool Load(Scene& scene, const std::string& path);
 
-    // NUEVO: (de)serialización en memoria
+    // (de)serialización en memoria
     static nlohmann::json Dump(const Scene& scene);
     static bool LoadFromJson(Scene& scene, const nlohmann::json& j);
 };

@@ -1,6 +1,6 @@
 #include "InspectorPanel.h"
 #include "Runtime/SceneContext.h"
-#include "Runtime/EditorContext.h"   // ⬅️ nuevo
+#include "Runtime/EditorContext.h"
 #include "ECS/Components.h"
 #include "Editor/EditorFonts.h"
 #include "Systems/Renderer2D.h"
@@ -13,6 +13,49 @@
 #include <algorithm>
 #include "tinyfiledialogs.h"
 #include <filesystem>
+#include <unordered_set>
+
+static bool EntityExists(const Scene& scene, EntityID id) {
+    return scene.transforms.contains(id) ||
+        scene.sprites.contains(id) ||
+        scene.colliders.contains(id) ||
+        scene.scripts.contains(id) ||
+        scene.physics.contains(id) ||
+        scene.playerControllers.contains(id);
+}
+
+// Recorre todas las “fuentes” de entidades y arma un set de IDs vivos
+static std::vector<EntityID> GatherAllEntityIds(const Scene& scene) {
+    std::unordered_set<EntityID> set;
+    set.reserve(scene.transforms.size() + scene.sprites.size() + scene.colliders.size() +
+        scene.scripts.size() + scene.physics.size() + scene.playerControllers.size());
+
+    auto add = [&](auto const& map) { for (auto& kv : map) set.insert(kv.first); };
+    add(scene.transforms);
+    add(scene.sprites);
+    add(scene.colliders);
+    add(scene.scripts);
+    add(scene.physics);
+    add(scene.playerControllers);
+
+    std::vector<EntityID> ids(set.begin(), set.end());
+    std::sort(ids.begin(), ids.end());
+    return ids;
+}
+
+static Entity PickFallbackSelection(const Scene& scene, EntityID prev) {
+    // 1) Si hay player, priorizarlo
+    if (!scene.playerControllers.empty()) {
+        return Entity{ scene.playerControllers.begin()->first };
+    }
+
+    // 2) Siguiente por ID (o primera)
+    auto ids = GatherAllEntityIds(scene);
+    if (ids.empty()) return {}; // nada que seleccionar
+    auto it = std::upper_bound(ids.begin(), ids.end(), prev);
+    if (it != ids.end()) return Entity{ *it };
+    return Entity{ ids.front() };
+}
 
 static inline void ClampDockedMinWidth(float minW) {
     if (ImGui::GetWindowWidth() < minW) {
@@ -318,12 +361,32 @@ static void DrawScriptEditor(Scene& scene, Entity e) {
     ImGui::PopID();
 }
 
+static void DrawColliderSection(Scene& scene, Entity e) {
+    if (!e) return;
+
+    ImGui::PushFont(EditorFonts::H1);
+    ImGui::SeparatorText("Collider");
+    ImGui::PopFont();
+
+    auto& c = scene.colliders[e.id];
+
+    ImGui::Checkbox("Disparador (trigger)", &c.isTrigger);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("No colisión física; solo eventos.");
+}
+
 void InspectorPanel::OnGuiRender() {
     auto& scx = SceneContext::Get();
     auto& edx = EditorContext::Get();
 
     ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
     ClampDockedMinWidth(360.0f);
+
+    if (scx.scene && edx.selected) {
+        if (!EntityExists(*scx.scene, edx.selected.id)) {
+            edx.selected = PickFallbackSelection(*scx.scene, edx.selected.id);
+        }
+    }
 
     if (!edx.selected) {
         ImGui::TextUnformatted("No hay entidad seleccionada.");
@@ -358,8 +421,9 @@ void InspectorPanel::OnGuiRender() {
 
             if (doDelete) {
                 if (scx.scene && edx.selected && !isPlayer) {
+                    const EntityID old = edx.selected.id;
                     scx.scene->DestroyEntity(edx.selected);
-                    edx.selected = {}; // ⬅️ limpiar selección en EditorContext
+                    edx.selected = PickFallbackSelection(*scx.scene, old);
                     ImGui::EndTable();
                     ImGui::End();
                     return;
@@ -440,13 +504,8 @@ void InspectorPanel::OnGuiRender() {
             }
         }
 
-        // Sprite
         if (auto it = scx.scene->sprites.find(e.id); it != scx.scene->sprites.end()) {
             auto& s = it->second;
-
-            ImGui::PushFont(EditorFonts::H1);
-            ImGui::SeparatorText("Sprite");
-            ImGui::PopFont();
 
             ImGui::PushFont(EditorFonts::H2);
             ImGui::TextUnformatted("Tamaño:");
@@ -488,6 +547,7 @@ void InspectorPanel::OnGuiRender() {
         }
 
         if (scx.scene && edx.selected) {
+            DrawColliderSection(*scx.scene, edx.selected);
             DrawTexture2DEditor(*scx.scene, edx.selected);
             DrawScriptEditor(*scx.scene, edx.selected);
         }

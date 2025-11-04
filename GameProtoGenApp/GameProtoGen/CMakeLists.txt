@@ -4,12 +4,14 @@ project(GameProtoGen LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(APP_ICON_RC "${CMAKE_SOURCE_DIR}/Internal/Brand/appicon.rc")
+
 # Salidas predecibles
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-# Flags de build (ON por defecto para permitir "all-in-one" si querés)
+# Flags de build
 option(BUILD_EDITOR "Build the editor executable" ON)
 option(BUILD_PLAYER "Build the standalone player executable" ON)
 
@@ -136,22 +138,15 @@ FetchContent_MakeAvailable(googletest)
 #   LIBRERÍA RUNTIME (sin ImGui)
 # ===============================
 add_library(gp_runtime STATIC
-    # Core (sin Application.cpp)
     Core/SFMLWindow.cpp
     Core/Log.h
     Core/Log.cpp
-
-    # ECS
     ECS/Scene.cpp
     ECS/SceneSerializer.cpp
-
-    # Systems
     Systems/Renderer2D.cpp
     Systems/PhysicsSystem.cpp
     Systems/ScriptVM.cpp
     Systems/ScriptSystem.cpp
-
-    # Runtime
     Runtime/GameRunner.cpp
     Runtime/GameRunner.h
     Runtime/EditorContext.h
@@ -176,14 +171,9 @@ target_link_libraries(gp_runtime PUBLIC
 #   EJECUTABLE EDITOR: GameProtoGen
 # ======================================
 if (BUILD_EDITOR)
-  add_executable(GameProtoGen
-      # Core del Editor (con ImGui)
+  add_executable(GameProtoGen Win32
       Core/Application.cpp
-
-      # Editor main
       Editor/EditorApp.cpp
-
-      # Panels y capas
       Editor/Panels/ViewportPanel.cpp
       Editor/Panels/InspectorPanel.cpp
       Editor/Panels/ChatPanel.cpp
@@ -194,8 +184,6 @@ if (BUILD_EDITOR)
       Editor/EditorDockLayer.h
       Editor/EditorDockLayer.cpp
       Editor/EditorLogSink.h
-
-      # Net/Auth (solo Editor)
       Net/ApiClient.cpp
       Auth/PKCE.h
       Auth/PKCE.cpp
@@ -204,9 +192,9 @@ if (BUILD_EDITOR)
       Auth/LoopbackServer.h
       Auth/LoopbackServer.cpp
       Auth/TokenManager.h
-
-      # ImGui extra: std::string helpers (solo Editor)
+      Auth/JwtDisplayName.h
       ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
+      $<$<PLATFORM_ID:Windows>:${APP_ICON_RC}> 
   )
 
   target_link_libraries(GameProtoGen PRIVATE
@@ -220,24 +208,21 @@ if (BUILD_EDITOR)
   )
 
   target_include_directories(GameProtoGen PRIVATE
-      ${IMGUI_DIR}                 # para imgui.h
-      ${IMGUI_DIR}/misc/cpp        # para imgui_stdlib.h
+      ${IMGUI_DIR}
+      ${IMGUI_DIR}/misc/cpp
       ${cppcodec_SOURCE_DIR}
   )
 
-# Copiar Assets junto al .exe (Editor)
-add_custom_command(TARGET GameProtoGen POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_SOURCE_DIR}/Assets
-            $<TARGET_FILE_DIR:GameProtoGen>/Assets
-)
-
-# ⬇️ NUEVO: Copiar Internal junto al .exe (Editor)
-add_custom_command(TARGET GameProtoGen POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_SOURCE_DIR}/Internal
-            $<TARGET_FILE_DIR:GameProtoGen>/Internal
-)
+  add_custom_command(TARGET GameProtoGen POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+              ${CMAKE_SOURCE_DIR}/Assets
+              $<TARGET_FILE_DIR:GameProtoGen>/Assets
+  )
+  add_custom_command(TARGET GameProtoGen POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+              ${CMAKE_SOURCE_DIR}/Internal
+              $<TARGET_FILE_DIR:GameProtoGen>/Internal
+  )
 
   if (WIN32)
     target_link_libraries(GameProtoGen PRIVATE comdlg32)
@@ -252,30 +237,20 @@ endif()
 #   EJECUTABLE PLAYER: GameProtoGenPlayer
 # ======================================
 if (BUILD_PLAYER)
-  add_executable(GameProtoGenPlayer
+  add_executable(GameProtoGenPlayer Win32
       Runtime/PlayerMain.cpp
+      $<$<PLATFORM_ID:Windows>:${APP_ICON_RC}> 
   )
 
-  # Solo depende del runtime (NO ImGui, NO Auth, NO HTTP)
-  target_link_libraries(GameProtoGenPlayer PRIVATE
-    gp_runtime
-  )
+  target_link_libraries(GameProtoGenPlayer PRIVATE gp_runtime)
 
-  target_include_directories(GameProtoGenPlayer PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-  )
+  target_include_directories(GameProtoGenPlayer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-  # Copiar Assets junto al .exe (Player)
   add_custom_command(TARGET GameProtoGenPlayer POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_directory
               ${CMAKE_SOURCE_DIR}/Assets
               $<TARGET_FILE_DIR:GameProtoGenPlayer>/Assets
   )
-
-  if (WIN32)
-    # Para ocultar consola en Player, descomentar:
-    # set_target_properties(GameProtoGenPlayer PROPERTIES WIN32_EXECUTABLE TRUE)
-  endif()
 endif()
 
 # ===============================
@@ -297,3 +272,44 @@ target_link_libraries(gp_tests PRIVATE
 )
 
 add_test(NAME gp_tests COMMAND gp_tests)
+
+# ===============================
+#   INSTALL (simple)
+# ===============================
+include(GNUInstallDirs)
+
+# Ejecutables
+if (BUILD_EDITOR)
+  install(TARGETS GameProtoGen RUNTIME DESTINATION .)
+endif()
+if (BUILD_PLAYER)
+  install(TARGETS GameProtoGenPlayer RUNTIME DESTINATION .)
+endif()
+
+# Contenidos del juego
+if (EXISTS "${CMAKE_SOURCE_DIR}/Assets")
+  install(DIRECTORY ${CMAKE_SOURCE_DIR}/Assets DESTINATION .)
+endif()
+if (EXISTS "${CMAKE_SOURCE_DIR}/Internal")
+  install(DIRECTORY ${CMAKE_SOURCE_DIR}/Internal DESTINATION .)
+endif()
+
+# 🔹 Simple y efectivo: copiar las DLLs que ya quedaron al lado del .exe
+#    (esto requiere VCPKG_APPLOCAL_DEPS=ON en tus presets)
+if (BUILD_EDITOR)
+  install(DIRECTORY "$<TARGET_FILE_DIR:GameProtoGen>/" DESTINATION .
+          FILES_MATCHING PATTERN "*.dll")
+endif()
+if (BUILD_PLAYER)
+  install(DIRECTORY "$<TARGET_FILE_DIR:GameProtoGenPlayer>/" DESTINATION .
+          FILES_MATCHING PATTERN "*.dll")
+endif()
+
+# ===============================
+#   CPack (ZIP)
+# ===============================
+set(CPACK_PACKAGE_NAME "GameProtoGen")
+set(CPACK_PACKAGE_VENDOR "GameProtoGen")
+set(CPACK_PACKAGE_FILE_NAME "GameProtoGen-Windows")
+set(CPACK_GENERATOR "ZIP")
+include(CPack)

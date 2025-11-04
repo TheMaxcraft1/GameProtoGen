@@ -3,6 +3,13 @@
 #include "Systems/ScriptSystem.h"
 #include "Systems/Renderer2D.h"
 #include <SFML/Graphics.hpp>
+#include "ECS/SceneSerializer.h"
+#include "Core/Log.h"
+
+std::string s_scenePath = "scene.json";
+
+void GameRunner::SetScenePath(std::string path) { s_scenePath = std::move(path); }
+const std::string& GameRunner::GetScenePath() { return s_scenePath; }
 
 void GameRunner::Step(Scene& scene, float dt) {
     // Orden recomendado: input -> scripts -> física -> colisiones
@@ -10,8 +17,6 @@ void GameRunner::Step(Scene& scene, float dt) {
     Systems::ScriptSystem::Update(scene, dt);
     Systems::PhysicsSystem::Update(scene, dt);
     Systems::CollisionSystem::SolveAABB(scene);
-    // Si usás “suelo infinito” además de plataformas estáticas:
-    // Systems::CollisionSystem::SolveGround(scene, 900.f); // opcional
 }
 
 void GameRunner::Render(const Scene& scene,
@@ -41,13 +46,43 @@ void GameRunner::EnterPlay(Scene& scene) {
     Systems::ScriptSystem::ResetVM();
     for (auto& [id, sc] : scene.scripts) sc.loaded = false;
 
-    // (Opcional) limpiar estados físicos transitorios
+    // limpiar estados físicos transitorios
     for (auto& [id, ph] : scene.physics) {
         ph.onGround = false;
-        // ph.velocity = {0.f, 0.f}; // si querés arrancar “quieto”
+
     }
+
+    Systems::CollisionSystem::ResetTriggers();
 }
 
-void GameRunner::ExitPlay(Scene& /*scene*/) {
-    // Hoy no hace nada (podrías descargar scripts, etc.)
+void GameRunner::ExitPlay(Scene& scene) {
+    // 1) Apagar/descartar el estado del VM (borra envs de Lua)
+    Systems::ScriptSystem::ResetVM();
+
+    // 2) Limpiar flags/eventos transitorios de colisiones/trigger
+    Systems::CollisionSystem::ResetTriggers();
+
+    // 3)  normalizar estado físico efímero
+    //    No tocar posiciones/escena “de diseño” acá.
+    for (auto& [id, ph] : scene.physics) {
+        ph.onGround = false;
+
+    }
+
+    // 4)  cache gráfico: si cambiamos assets durante Play,
+    //    al volver a edición forzás un reload limpio.
+    Renderer2D::ClearTextureCache();
+}
+
+bool GameRunner::ReloadFromDisk(Scene& scene) {
+    Scene tmp;
+    if (!SceneSerializer::Load(tmp, s_scenePath)) {
+        Log::Error(std::string("[RESET] No se pudo cargar: ") + s_scenePath);
+        return false;
+    }
+    scene = std::move(tmp);
+    Renderer2D::ClearTextureCache();
+    EnterPlay(scene); // rearmar VM/estados para Play
+    Log::Info(std::string("[RESET] Reload OK desde: ") + s_scenePath);
+    return true;
 }

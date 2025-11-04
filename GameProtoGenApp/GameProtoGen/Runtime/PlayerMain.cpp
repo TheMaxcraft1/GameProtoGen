@@ -18,7 +18,7 @@ static path DetectScenePath(int argc, char** argv) {
     // 1) Si pasaron ruta por argv[1], usala
     if (argc > 1) return path(argv[1]);
 
-    // 2) Si no, probá "scene.json" junto al ejecutable
+    // 2) Si no, probamos "scene.json" junto al ejecutable
     path exeDir = path(argv[0]).parent_path();
     path p = exeDir / "scene.json";
     if (exists(p)) return p;
@@ -46,6 +46,7 @@ int main(int argc, char** argv) {
     // Carga de escena
     Scene scene;
     const path scenePath = DetectScenePath(argc, argv);
+    GameRunner::SetScenePath(scenePath.string());
     if (!exists(scenePath) || !SceneSerializer::Load(scene, scenePath.string())) {
         std::cerr << "[PLAYER] No se pudo cargar la escena desde: " << scenePath << "\n";
         // Semilla mínima
@@ -72,9 +73,7 @@ int main(int argc, char** argv) {
             if (ev->is<sf::Event::Closed>()) {
                 window.close();
             }
-            // Ejemplos extra:
-            // if (ev->is<sf::Event::KeyPressed>()) { ... }
-            // if (auto* resized = ev->getIf<sf::Event::Resized>()) { ... }
+
         }
 
         float dt = clock.restart().asSeconds();

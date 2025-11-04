@@ -27,6 +27,7 @@
 #include <SFML/Graphics/Color.hpp>
 
 #include <nlohmann/json.hpp>
+#include <Auth/JwtDisplayName.h>
 
 // ======================== Helpers ========================
 namespace {
@@ -178,11 +179,6 @@ namespace {
             if (sc.path.empty()) continue;
             try_add(sc.path, "script");
         }
-
-        // 3) (Opcional) Si tu Sprite tiene un campo con ruta de imagen (descomenta si aplica)
-        // for (const auto& [id, spr] : scene.sprites) {
-        //     if (!spr.imagePath.empty()) try_add(spr.imagePath, "sprite");
-        // }
 
         return out;
     }
@@ -453,15 +449,13 @@ namespace {
             scene.physics[dst.id] = p;
         }
 
-        // 🔹 Texture (conserva el path para que apunte al mismo asset)
+        //  Texture (conserva el path para que apunte al mismo asset)
         //    Esto NO copia archivos; solo duplica el componente con su ruta.
         if (auto it = scene.textures.find(src.id); it != scene.textures.end()) {
             scene.textures[dst.id] = it->second;
-            // opcional: si tu struct tiene campos de handle/cached, podrías invalidarlos aquí
-            // scene.textures[dst.id].handle = nullptr; // si aplica a tu implementación
         }
 
-        // 🔹 Script (respeta path o inlineCode; fuerza reload)
+        // Script (respeta path o inlineCode; fuerza reload)
         if (auto it = scene.scripts.find(src.id); it != scene.scripts.end()) {
             Script sc = it->second;      // copia completa (path e inlineCode)
             sc.loaded = false;           // asegura que el runtime/editor lo recargue
@@ -673,11 +667,11 @@ void EditorDockLayer::OnGuiRender() {
             if (ImGui::MenuItem("Guardar", "Ctrl+S")) DoSave();
             if (ImGui::MenuItem("Cargar", "Ctrl+O")) DoLoad();
             ImGui::Separator();
-            if (ImGui::MenuItem("Exportar ejecutable…")) {
+            if (ImGui::MenuItem("Exportar ejecutable")) {
                 DoExportExecutable();
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Iniciar sesión…")) {
+            if (ImGui::MenuItem("Iniciar sesión")) {
                 DoLoginInteractive();
             }
             ImGui::Separator();
@@ -698,7 +692,7 @@ void EditorDockLayer::OnGuiRender() {
                     edx.selected = e;
                 }
             }
-            if (ImGui::MenuItem("Crear plataforma", "Ctrl+N")) {
+            if (ImGui::MenuItem("Crear plataforma")) {
                 if (scx.scene) {
                     const sf::Vector2f spawnPos = scx.cameraCenter;
                     Entity e = SpawnPlatform(*scx.scene, spawnPos, { 200.f, 50.f });
@@ -718,6 +712,35 @@ void EditorDockLayer::OnGuiRender() {
                 ImGui::EndDisabled();
             }
             ImGui::EndMenu();
+        }
+        // --- Usuario (derecha en la barra) ---
+        {
+            auto& edx = EditorContext::Get();
+            // Obtené el display name desde tu TokenManager (ver cambio previo)
+            std::string userName;
+            if (edx.tokenManager) {
+                userName = DisplayNameFromIdToken(edx.tokenManager->IdToken());
+            }
+            if (userName.empty()) userName = "Inicia sesión!";
+
+            ImGuiStyle& style = ImGui::GetStyle();
+
+            // Texto a mostrar (podés hacer un menú desplegable también)
+            const std::string userLabel = userName;
+
+            // Guardamos Y actual para no “saltar” verticalmente al mover X
+            const float savedY = ImGui::GetCursorPosY();
+
+            // Calculamos X para alinear a la derecha del menubar
+            const float textW = ImGui::CalcTextSize(userLabel.c_str()).x;
+            const float rightEdge = ImGui::GetWindowContentRegionMax().x; // borde derecho usable
+            const float targetX = rightEdge - textW - style.ItemSpacing.x; // un pequeño padding
+
+            // Movemos el cursor y dibujamos
+            ImGui::SameLine(0.0f, 0.0f);      // seguimos en la misma línea del menú
+            ImGui::SetCursorPosY(savedY);
+            ImGui::SetCursorPosX(std::max(targetX, ImGui::GetCursorPosX()));
+            ImGui::Text("%s", userLabel.c_str());
         }
         ImGui::EndMenuBar();
     }
@@ -763,20 +786,87 @@ void EditorDockLayer::OnGuiRender() {
             }
         }
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D, false)) {
-            if (scx.scene && edx.selected && !IsPlayer(*scx.scene, edx.selected)) {
-                Entity newE = DuplicateEntity(*scx.scene, edx.selected, { 16.f,16.f });
-                if (newE) {
-                    edx.selected = newE;
-                    edx.requestSelectTool = true;
+            auto& scx = SceneContext::Get();
+            auto& edx = EditorContext::Get();
+            if (!scx.scene) return;
+
+            const sf::Vector2f kOffset{ 16.f, 16.f };
+
+            // 1) Construir lista base a duplicar
+            std::vector<EntityID> base;
+            base.reserve(edx.multiSelected.size() + 1);
+
+            if (!edx.multiSelected.empty()) {
+                // Si hay multi, usamos ese set
+                for (auto id : edx.multiSelected) {
+                    Entity e{ id };
+                    if (!IsPlayer(*scx.scene, e)) base.push_back(id);
                 }
             }
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {
-            if (scx.scene && edx.selected && !IsPlayer(*scx.scene, edx.selected)) {
-                scx.scene->DestroyEntity(edx.selected);
-                edx.selected = {};
+            else if (edx.selected) {
+                // Si no hay multi, usamos el seleccionado (si no es player)
+                if (!IsPlayer(*scx.scene, edx.selected))
+                    base.push_back(edx.selected.id);
             }
+
+            if (base.empty()) return;
+
+            // 2) Duplicar todos y recolectar nuevas IDs
+            std::vector<EntityID> copies;
+            copies.reserve(base.size());
+            for (auto id : base) {
+                Entity src{ id };
+                Entity dst = DuplicateEntity(*scx.scene, src, kOffset);
+                if (dst) copies.push_back(dst.id);
+            }
+
+            if (copies.empty()) return;
+
+            // 3) Actualizar selección: dejar seleccionadas SOLO las copias nuevas
+            edx.multiSelected.clear();
+            for (auto id : copies) edx.multiSelected.insert(id);
+
+            // Foco (primaria) en una de las nuevas
+            edx.selected = Entity{ copies.back() };
+
+            // Volver a herramienta Select para permitir arrastrar el grupo enseguida
+            edx.requestSelectTool = true;
+
+            Log::Info(std::string("[DUPLICATE] Duplicadas ")
+                + std::to_string((int)copies.size()) + " entidades; foco en copia "
+                + std::to_string(copies.back()));
         }
+        if (!playing && ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {
+            auto& scx = SceneContext::Get();
+            auto& edx = EditorContext::Get();
+            if (!scx.scene) return;
+
+            // 1) Armar lista a borrar
+            std::vector<EntityID> toDelete;
+            toDelete.reserve(edx.multiSelected.size() + 1);
+
+            if (!edx.multiSelected.empty()) {
+                for (auto id : edx.multiSelected) {
+                    if (!IsPlayer(*scx.scene, Entity{ id })) toDelete.push_back(id);
+                }
+            }
+            else if (edx.selected) {
+                if (!IsPlayer(*scx.scene, edx.selected)) toDelete.push_back(edx.selected.id);
+            }
+
+            // 2) Borrar
+            for (EntityID id : toDelete) {
+                scx.scene->DestroyEntity(Entity{ id }); // o DestroyEntity(id) según tu firma
+            }
+
+            // 3) Limpiar TODA la selección (sin fallback)
+            edx.selected = {};
+            edx.multiSelected.clear();
+
+            Log::Info(std::string("[DELETE] Eliminadas ")
+                + std::to_string((int)toDelete.size()) + " entidades; selección limpia.");
+        }
+    
     }
 
     // ── DockSpace + layout inicial ─────────────────────────────────────────

@@ -23,7 +23,7 @@ void Scene::DestroyEntity(Entity e) {
     physics.erase(e.id);
     scripts.erase(e.id);
     playerControllers.erase(e.id);
-    // borrar de la lista de entidades (O(n), suficiente para MVP)
+    // borrar de la lista de entidades (O(n))
     for (auto it = m_Entities.begin(); it != m_Entities.end(); ++it) {
         if (it->id == e.id) { m_Entities.erase(it); break; }
     }

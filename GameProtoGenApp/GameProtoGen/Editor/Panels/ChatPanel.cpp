@@ -1,7 +1,6 @@
-// GameProtoGen/ChatPanel.cpp
 #include "ChatPanel.h"
 #include "Runtime/SceneContext.h"
-#include "Runtime/EditorContext.h"   // << agregado
+#include "Runtime/EditorContext.h"
 #include "ECS/Scene.h"
 #include "ECS/SceneSerializer.h"
 #include <imgui.h>
@@ -87,7 +86,7 @@ static bool SaveBase64ToFile(const std::string& base64, const std::string& outPa
     }
 }
 
-// --- Helpers locales para dibujar iconos como botón (misma técnica que usás en otro componente) ---
+// --- Helpers locales para dibujar iconos como botón  ---
 static ImVec2 FitIconHeight(const sf::Texture& tex, float btnH) {
     const auto size = tex.getSize();
     if (size.y == 0) return ImVec2(btnH, btnH);
@@ -176,8 +175,19 @@ ChatPanel::ChatPanel(std::shared_ptr<ApiClient> client)
 void ChatPanel::OnGuiRender() {
     ImGui::Begin("Chat", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
 
+    // --- Selección (antes de calcular footerH) ---
+    auto& edx = EditorContext::Get();
+    const bool hasMulti = !edx.multiSelected.empty();
+    const bool hasAnySel = hasMulti || (edx.selected && edx.selected.id != 0);
+
     // ----- HISTORIAL (scrollable) -----
-    const float footerH = ImGui::GetFrameHeightWithSpacing() + 10.0f;
+    // Alto base del footer (input + botón)
+    const float baseFooterH = ImGui::GetFrameHeightWithSpacing() + 10.0f;
+
+    // Si hay selección (single o multi), reservamos espacio para el checkbox
+    const float checkboxH = hasAnySel ? (ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.y) : 0.0f;
+    const float footerH = baseFooterH + checkboxH;
+
 #if IMGUI_VERSION_NUM >= 19000
     ImGuiChildFlags cflags = ImGuiChildFlags_None;
     ImGuiWindowFlags wflags = ImGuiWindowFlags_HorizontalScrollbar;
@@ -206,6 +216,18 @@ void ChatPanel::OnGuiRender() {
     ImGui::BeginDisabled(m_Busy || m_Input.empty());
     if (ImGui::Button(m_Busy ? "Enviando..." : "Enviar")) send = true;
     ImGui::EndDisabled();
+
+    if (hasAnySel) {
+        ImGui::Dummy(ImVec2(0, ImGui::GetStyle().ItemSpacing.y * 0.25f));
+        ImGui::Checkbox("Modificar solo seleccionado", &m_OnlySelectedScope);
+
+        // Tooltip contextual
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            const char* tip =
+                "Se aplicará a la/s entidad/es seleccionada/s.";
+            ImGui::SetTooltip("%s", tip);
+        }
+    }
 
     if (send && !m_Busy && !m_Input.empty()) {
         SendCurrentPrompt();
@@ -241,7 +263,6 @@ void ChatPanel::OnGuiRender() {
                         typingBubble.text = root.value("message", "");
                     }
                     else if (kind == "asset") {
-                        // NUEVO: guardar la imagen y mostrar resultado
                         const std::string fileName = root.value("fileName", "asset.png");
                         const std::string data = root.value("data", "");
                         std::string safeName = fileName;
@@ -263,7 +284,6 @@ void ChatPanel::OnGuiRender() {
                         const std::string fileName = root.value("fileName", "script.lua");
                         const std::string code = root.value("code", "");
 
-                        // sanitizar nombre
                         std::string safeName = fileName;
                         for (char& ch : safeName) {
                             if (ch == '/' || ch == '\\' || ch == ':' || ch == '*' || ch == '?' ||
@@ -286,7 +306,7 @@ void ChatPanel::OnGuiRender() {
                         OpCounts total{};
                         std::vector<std::string> texts;
 
-                        // 1) PRIMER PASO: guardar assets
+                        // 1) Guardar assets
                         if (root.contains("items") && root["items"].is_array()) {
                             for (const auto& it : root["items"]) {
                                 const std::string ik = it.value("kind", "");
@@ -311,16 +331,17 @@ void ChatPanel::OnGuiRender() {
                                     const std::string code = it.value("code", "");
                                     std::string safeName = fileName;
                                     for (char& ch : safeName) {
-                                        if (ch == '/' || ch == '\\' || ch == ':' || ch == '*' || ch == '?' || ch == '"' || ch == '<' || ch == '>' || ch == '|') ch = '_';
+                                        if (ch == '/' || ch == '\\' || ch == ':' || ch == '*' || ch == '?' ||
+                                            ch == '"' || ch == '>' || ch == '<' || ch == '|') ch = '_';
                                     }
                                     const std::string outPath = "Assets/Scripts/" + safeName;
                                     if (!code.empty() && SaveTextToFile(outPath, code)) {
                                         Log::Info(std::string("[SCRIPT] Guardado: ") + outPath);
                                         // Asignación automática
                                         auto& scx = SceneContext::Get();
-                                        auto& edx = EditorContext::Get();
+                                        auto& edx2 = EditorContext::Get();
                                         EntityID target = 0;
-                                        if (edx.selected) target = edx.selected.id;
+                                        if (edx2.selected) target = edx2.selected.id;
                                         else if (scx.scene && !scx.scene->playerControllers.empty())
                                             target = scx.scene->playerControllers.begin()->first;
                                         if (!target && scx.scene) {
@@ -329,7 +350,7 @@ void ChatPanel::OnGuiRender() {
                                             scx.scene->sprites[e.id] = Sprite{ {64.f,64.f}, sf::Color(255,255,255,255) };
                                             scx.scene->colliders[e.id] = Collider{ {32.f,32.f}, {0.f,0.f} };
                                             target = e.id;
-                                            edx.selected = e; // << mover selección a EditorContext
+                                            edx2.selected = e;
                                         }
                                         if (scx.scene && target) {
                                             auto& sc = scx.scene->scripts[target];
@@ -345,7 +366,7 @@ void ChatPanel::OnGuiRender() {
                             }
                         }
 
-                        // 2) SEGUNDO PASO: aplicar ops + colectar textos
+                        // 2) Aplicar ops + textos
                         if (root.contains("items") && root["items"].is_array()) {
                             for (const auto& it : root["items"]) {
                                 const std::string ik = it.value("kind", "");
@@ -361,7 +382,7 @@ void ChatPanel::OnGuiRender() {
                             }
                         }
 
-                        // 3) Mensaje en la burbuja "typing"
+                        // 3) Mensaje final
                         if (total.created || total.modified || total.removed) {
                             typingBubble.text = "Listo: "
                                 + std::to_string(total.created) + " creadas, "
@@ -410,14 +431,34 @@ void ChatPanel::SendCurrentPrompt() {
 
     // 3) Disparar request
     m_Busy = true;
+
     auto& scx = SceneContext::Get();
-    nlohmann::json sceneJson = scx.scene ? SceneSerializer::Dump(*scx.scene)
+    auto& edx = EditorContext::Get();
+
+    nlohmann::json sceneJson = scx.scene
+        ? SceneSerializer::Dump(*scx.scene)
         : nlohmann::json::object();
-    m_Fut = m_Client->SendCommandAsync(m_Input, sceneJson);
+
+    // Scope de edición: solo si el checkbox está activo
+    std::vector<uint32_t> selectedIds;
+    if (m_OnlySelectedScope) {
+        if (!edx.multiSelected.empty()) {
+            selectedIds.assign(edx.multiSelected.begin(), edx.multiSelected.end());
+        }
+        else if (edx.selected && edx.selected.id != 0) {
+            selectedIds.push_back(edx.selected.id);
+        }
+        // Si no hay nada seleccionado, queda vacío y no se enviará el campo
+    }
+    // Nota: si el checkbox NO está tildado, 'selectedIds' queda vacío a propósito.
+
+    // Enviar (el ApiClient omite "selected" si selectedIds está vacío)
+    m_Fut = m_Client->SendCommandAsync(m_Input, sceneJson, std::move(selectedIds));
 
     // 4) limpiar input
     m_Input.clear();
 }
+
 
 void ChatPanel::RenderHistory() {
 
@@ -432,7 +473,7 @@ void ChatPanel::RenderHistory() {
     static bool s_CopyInit = false;
     if (!s_CopyInit) {
         s_CopyInit = true;
-        s_CopyOk = s_CopyTex.loadFromFile("Assets/Icons/copy.png");
+        s_CopyOk = s_CopyTex.loadFromFile("Internal/Icons/copy.png");
         s_CopyTex.setSmooth(true);
     }
 
@@ -489,7 +530,7 @@ void ChatPanel::RenderHistory() {
                 float iconH = 18.0f;
                 ImVec2 iconSz = s_CopyOk ? FitIconHeight(s_CopyTex, iconH) : ImVec2(40.0f, iconH);
 
-                // ✅ Posicionar el botón a la derecha en local
+                // Posicionar el botón a la derecha en local
                 ImGui::SetCursorPosX(x0 + innerW - iconSz.x);
 
                 const double now = (double)ImGui::GetTime();
@@ -582,15 +623,22 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
             auto pos = op["pos"];
             auto size = op["size"];
             sf::Color col = TryParseColor(op, sf::Color(60, 60, 70, 255));
+
             Entity e = scx.scene->CreateEntity();
             scx.scene->transforms[e.id] = Transform{ {pos[0].get<float>(), pos[1].get<float>()}, {1.f,1.f}, 0.f };
             scx.scene->sprites[e.id] = Sprite{ {size[0].get<float>(), size[1].get<float>()}, col };
             scx.scene->colliders[e.id] = Collider{ {size[0].get<float>() * 0.5f, size[1].get<float>() * 0.5f}, {0.f,0.f} };
 
-            // NUEVO: textura opcional
+            // Textura opcional directa en la op (por compat con algunos synthesizers)
             if (op.contains("texturePath") && op["texturePath"].is_string()) {
                 scx.scene->textures[e.id] = Texture2D{ op["texturePath"].get<std::string>() };
+                Renderer2D::InvalidateTexture(op["texturePath"].get<std::string>());
             }
+
+            if (op.contains("isTrigger") && op["isTrigger"].is_boolean()) {
+                scx.scene->colliders[e.id].isTrigger = op["isTrigger"].get<bool>();
+            }
+
             created.insert(e.id);
         }
         else if (type == "set_transform") {
@@ -668,7 +716,6 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
                 if (value.contains("path") && value["path"].is_string()) {
                     std::string newPath = value["path"].get<std::string>();
 
-                    // crea o muta el componente
                     auto& tex = scene.textures[id];
                     std::string oldPath = tex.path;
                     tex.path = newPath;
@@ -681,7 +728,46 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
                     if (created.count(id) == 0) modified.insert(id);
                 }
             }
-        }
+            else if (id && comp == "Script" && op.contains("value") && op["value"].is_object()) {
+                // asignación de script por path (simétrico a Texture2D)
+                auto& scene = *scx.scene;
+                const auto& value = op["value"];
+                if (value.contains("path") && value["path"].is_string()) {
+                    std::string newPath = value["path"].get<std::string>();
+
+                    auto& sc = scene.scripts[id];
+                    std::string oldPath = sc.path;
+                    sc.path = newPath;
+                    sc.inlineCode.clear(); // preferimos archivo si vino path
+                    sc.loaded = false;     // forzar recarga desde disco
+
+                    if (created.count(id) == 0) modified.insert(id);
+                }
+            }
+            else if (id && comp == "Collider" && op.contains("value") && op["value"].is_object()) {
+                auto& scene = *scx.scene;
+
+                // Asegurar que exista el collider con defaults
+                if (!scene.colliders.contains(id)) {
+                    sf::Vector2f he{ 16.f,16.f };
+                    if (scene.sprites.contains(id)) {
+                        auto sz = scene.sprites[id].size;
+                        he = { std::max(1.f, sz.x * 0.5f), std::max(1.f, sz.y * 0.5f) };
+                    }
+                    scene.colliders[id] = Collider{ he, {0.f,0.f} };
+                }
+
+                auto& col = scene.colliders[id];
+                const auto& value = op["value"];
+
+                if (value.contains("isTrigger") && value["isTrigger"].is_boolean()) {
+                    col.isTrigger = value["isTrigger"].get<bool>();
+                    if (created.count(id) == 0) modified.insert(id);
+                }
+
+                // Ignorar cualquier otro campo (offset/halfExtents) si viniera por error
+            }
+}
         else if (type == "remove_entity") {
             uint32_t id = GetEntityId(op);
             if (id && scx.scene) {

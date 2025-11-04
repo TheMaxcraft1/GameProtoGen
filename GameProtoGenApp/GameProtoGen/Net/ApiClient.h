@@ -26,10 +26,12 @@ public:
 
     std::optional<nlohmann::json> SendCommand(const std::string& prompt,
         const nlohmann::json& scene,
+        const std::vector<uint32_t>& selected = {},
         std::string* errMsg = nullptr);
 
     std::future<Result> SendCommandAsync(std::string prompt,
-        nlohmann::json scene);
+        nlohmann::json scene,
+        std::vector<uint32_t> selected = {});
 
     void SetTimeouts(int connectSec, int readSec, int writeSec) {
         m_ConnectTimeoutSec = connectSec; // tiempo máximo para establecer la conexión

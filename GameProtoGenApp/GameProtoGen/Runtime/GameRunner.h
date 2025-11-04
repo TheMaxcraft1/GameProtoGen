@@ -14,4 +14,7 @@ public:
 
     static void EnterPlay(Scene& scene);
     static void ExitPlay(Scene& scene);
+    static void SetScenePath(std::string path);
+    static const std::string& GetScenePath();
+    static bool ReloadFromDisk(Scene& scene);
 };

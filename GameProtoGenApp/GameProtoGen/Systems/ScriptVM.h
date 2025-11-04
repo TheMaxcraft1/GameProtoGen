@@ -17,6 +17,7 @@ public:
     bool CallOnUpdate(EntityID id, float dt, std::string& err);
     void Reset();
     void BindScene(Scene& scene);
+    bool CallOnTriggerEnter(EntityID id, EntityID other, std::string& err);
 
 private:
     struct PerEntity {

@@ -1,4 +1,3 @@
-// Editor/ImGuiCoreLayer.cpp
 #include "ImGuiCoreLayer.h"
 #include "Core/SFMLWindow.h"
 #include "EditorFonts.h"

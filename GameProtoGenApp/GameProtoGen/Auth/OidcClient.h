@@ -12,8 +12,8 @@ struct OidcTokens {
 
 struct OidcConfig {
     std::string client_id;
-    std::string authorize_endpoint; // p.ej. https://login.microsoftonline.com/<tenant>/oauth2/v2.0/authorize
-    std::string token_endpoint;     // p.ej. https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token
+    std::string authorize_endpoint;
+    std::string token_endpoint;
     std::vector<std::string> scopes;
 };
 

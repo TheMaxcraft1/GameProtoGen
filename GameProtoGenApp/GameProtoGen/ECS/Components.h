@@ -22,6 +22,7 @@ struct Collider {
     // AABB simple relativo al centro del objeto
     sf::Vector2f halfExtents{ 50.f, 50.f };
     sf::Vector2f offset{ 0.f, 0.f };
+    bool isTrigger = false;
 };
 
 struct Physics2D {
@@ -37,7 +38,7 @@ struct PlayerController {
 };
 
 struct Script {
-    std::string path;       // Ruta a .lua (opcional)
-    std::string inlineCode; // Código embebido (opcional)
+    std::string path;       // Ruta a .lua 
+    std::string inlineCode; // Código embebido 
     bool loaded = false;    // ¿ya se corrió on_spawn?
 };

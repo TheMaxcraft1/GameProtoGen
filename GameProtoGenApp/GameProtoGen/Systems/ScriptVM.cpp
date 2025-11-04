@@ -1,5 +1,7 @@
 #include "ScriptVM.h"
 #include <sstream>
+#include "Core/Log.h"
+#include "Runtime/GameRunner.h"
 
 ScriptVM::ScriptVM() : m_L(std::make_unique<sol::state>()) {
     auto& L = *m_L;
@@ -56,6 +58,18 @@ bool ScriptVM::CallOnSpawn(EntityID id, std::string& err) {
     return true;
 }
 
+bool ScriptVM::CallOnTriggerEnter(EntityID id, EntityID other, std::string& err) {
+    auto it = m_envs.find(id);
+    if (it == m_envs.end()) return true; // si no hay script, no es error
+    sol::object f = it->second.env["on_trigger_enter"];
+    if (f.is<sol::protected_function>()) {
+        sol::protected_function pf = f.as<sol::protected_function>();
+        auto res = pf(other);
+        if (!res.valid()) { sol::error e = res; err = e.what(); return false; }
+    }
+    return true;
+}
+
 bool ScriptVM::CallOnUpdate(EntityID id, float dt, std::string& err) {
     auto it = m_envs.find(id);
     if (it == m_envs.end()) return true;
@@ -72,6 +86,32 @@ bool ScriptVM::CallOnUpdate(EntityID id, float dt, std::string& err) {
 void ScriptVM::RegisterApi() {
     auto& L = *m_L;
     L["ecs"] = L.create_table();
+
+    L.set_function("gameReset", [this]() -> bool {
+        if (!m_scene) return false;
+        return GameRunner::ReloadFromDisk(*m_scene);
+        });
+
+    L.set_function("print", [&L](sol::variadic_args va) {
+        std::ostringstream oss;
+        bool first = true;
+        for (auto v : va) {
+            if (!first) oss << ' ';
+            first = false;
+
+            // tostring-like básico
+            if (v.is<std::string>())      oss << v.as<std::string>();
+            else if (v.is<double>())      oss << v.as<double>();
+            else if (v.is<int>())         oss << v.as<int>();
+            else if (v.is<bool>())        oss << (v.as<bool>() ? "true" : "false");
+            else if (v.is<sol::nil_t>())  oss << "nil";
+            else if (v.get_type() == sol::type::table) oss << "<table>";
+            else if (v.get_type() == sol::type::function) oss << "<function>";
+            else if (v.get_type() == sol::type::userdata) oss << "<userdata>";
+            else oss << "<value>";
+        }
+        Log::Info(std::string("[lua] ") + oss.str());
+        });
 
     // ecs.create() -> id
     L["ecs"]["create"] = [this]() -> EntityID {
@@ -224,5 +264,5 @@ void ScriptVM::RegisterApi() {
             if (ms.valid()) pc.moveSpeed = ms.as<float>();
             if (js.valid()) pc.jumpSpeed = js.as<float>();
         }
-        };
+    };
 }

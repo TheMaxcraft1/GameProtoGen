@@ -21,6 +21,7 @@
 #include <imgui-SFML.h>
 #include <SFML/Graphics.hpp>   
 #include <Editor/EditorFonts.h>
+#include "Auth/JwtDisplayName.h"
 
 using std::filesystem::exists;
 using std::filesystem::directory_iterator;
@@ -29,6 +30,16 @@ static void EnsureSavesDir() {
     std::error_code ec;
     std::filesystem::create_directories("Saves", ec);
     (void)ec;
+}
+
+static bool DeleteFileSafe(const std::string& path, std::string& err)
+{
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) return true; // ya no existe
+    if (!std::filesystem::is_regular_file(path, ec)) { err = "No es un archivo regular."; return false; }
+    std::filesystem::remove(path, ec);
+    if (ec) { err = ec.message(); return false; }
+    return true;
 }
 
 static std::string NormalizeProjectName(std::string name, std::string& err) {
@@ -79,11 +90,18 @@ bool LauncherLayer::TryAutoLogin() {
     if (edx.apiClient) {
         edx.apiClient->SetAccessToken(at);
     }
+
+    if (edx.tokenManager) {
+        m_displayName = DisplayNameFromIdToken(edx.tokenManager->IdToken());
+    }
     return true;
 }
 
 void LauncherLayer::OnAttach() {
     EnsureSavesDir();
+    // Asegurar contexto activo en este hilo
+
+
     m_loggedIn = TryAutoLogin();
 
     m_LogoOK = m_LogoTex.loadFromFile("Internal/Brand/logo.png");
@@ -109,6 +127,12 @@ void LauncherLayer::DoLoginInteractive() {
 
     if (!edx.tokenManager) edx.tokenManager = std::make_shared<TokenManager>(cfg);
     edx.tokenManager->OnInteractiveLogin(*tokens);
+
+    m_displayName.clear();
+    if (!tokens->id_token.empty())
+        m_displayName = DisplayNameFromIdToken(tokens->id_token);
+    else if (edx.tokenManager)
+        m_displayName = DisplayNameFromIdToken(edx.tokenManager->IdToken());
 
     edx.apiClient->SetAccessToken(tokens->access_token);
     edx.apiClient->SetTokenRefresher([mgr = edx.tokenManager]() -> std::optional<std::string> {
@@ -325,7 +349,10 @@ void LauncherLayer::OnGuiRender() {
         ImGui::TextDisabled("(necesaria para usar el editor y el chat)");
     }
     else {
-        ImGui::TextColored(ImVec4(0.1f, 0.6f, 0.1f, 1.f), "Estás logueado.");
+        if (!m_displayName.empty())
+            ImGui::TextColored(ImVec4(0.1f, 0.6f, 0.1f, 1.f), "Hola %s!", m_displayName.c_str());
+        else
+            ImGui::TextColored(ImVec4(0.1f, 0.6f, 0.1f, 1.f), "Sesión iniciada.");
     }
 
     ImGui::Dummy(ImVec2(0, 8));
@@ -340,7 +367,6 @@ void LauncherLayer::OnGuiRender() {
     // Acciones
     ImGui::BeginDisabled(!m_loggedIn);
     if (ImGui::Button("Nuevo proyecto")) {
-        // Abrir modal para pedir nombre
         m_selected.clear();
         m_newProjModal = true;
         std::snprintf(m_newProjName, sizeof(m_newProjName), "Nuevo Proyecto");
@@ -354,6 +380,59 @@ void LauncherLayer::OnGuiRender() {
     }
     ImGui::EndDisabled();
     ImGui::EndDisabled();
+
+    // --- Botón Eliminar (habilitado si hay selección) ---
+    ImGui::SameLine();
+    ImGui::BeginDisabled(m_selected.empty());
+    if (ImGui::Button("Eliminar seleccionado")) {
+        m_toDeletePath = m_selected;     // congelar ruta al momento del click
+        m_deleteError.clear();
+        m_confirmDeleteModal = true;
+        ImGui::OpenPopup("Eliminar proyecto");
+    }
+    ImGui::EndDisabled();
+
+    // --- Modal de confirmación de borrado ---
+    if (ImGui::BeginPopupModal("Eliminar proyecto", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextWrapped("Vas a eliminar el proyecto:\n%s", m_toDeletePath.c_str());
+        ImGui::Dummy(ImVec2(0, 6));
+        ImGui::TextDisabled("Esta acción no se puede deshacer.");
+
+        if (!m_deleteError.empty()) {
+            ImGui::Dummy(ImVec2(0, 6));
+            ImGui::TextColored(ImVec4(0.8f, 0.1f, 0.1f, 1.f), "Error: %s", m_deleteError.c_str());
+        }
+
+        ImGui::Dummy(ImVec2(0, 6));
+        if (ImGui::Button("Eliminar", ImVec2(120, 0))) {
+            std::string err;
+            if (DeleteFileSafe(m_toDeletePath, err)) {
+                // Si era el proyecto activo, limpiarlo
+                auto& edx = EditorContext::Get();
+                if (edx.projectPath == m_toDeletePath) {
+                    edx.projectPath.clear();
+                }
+                // Limpiar selección y cerrar modal
+                if (m_selected == m_toDeletePath) m_selected.clear();
+                m_toDeletePath.clear();
+                m_confirmDeleteModal = false;
+                ImGui::CloseCurrentPopup();
+            }
+            else {
+                m_deleteError = err.empty() ? "No se pudo eliminar el archivo." : err;
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancelar", ImVec2(120, 0))) {
+            m_confirmDeleteModal = false;
+            m_toDeletePath.clear();
+            m_deleteError.clear();
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    }
+
 
     if (!m_loggedIn) {
         ImGui::Dummy(ImVec2(0, 6));

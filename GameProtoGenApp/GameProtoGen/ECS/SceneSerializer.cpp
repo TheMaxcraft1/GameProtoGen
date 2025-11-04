@@ -41,7 +41,8 @@ static json dump_impl(const Scene& scene) {
             const auto& c = it->second;
             je["Collider"] = {
                 {"halfExtents", {c.halfExtents.x, c.halfExtents.y}},
-                {"offset",      {c.offset.x, c.offset.y}}
+                {"offset",      {c.offset.x, c.offset.y}},
+                {"isTrigger",   c.isTrigger}
             };
         }
         if (auto it = scene.physics.find(id); it != scene.physics.end()) {
@@ -124,6 +125,7 @@ bool SceneSerializer::Load(Scene& scene, const std::string& path) {
             auto jc = je["Collider"];
             c.halfExtents = { jc["halfExtents"][0].get<float>(), jc["halfExtents"][1].get<float>() };
             c.offset = { jc["offset"][0].get<float>(), jc["offset"][1].get<float>() };
+            c.isTrigger = jc.value("isTrigger", false);
         }
         if (je.contains("Physics2D")) {
             auto& p = scene.physics[id];
@@ -196,6 +198,7 @@ bool SceneSerializer::LoadFromJson(Scene& scene, const nlohmann::json& j) {
             auto jc = je["Collider"];
             c.halfExtents = { jc["halfExtents"][0].get<float>(), jc["halfExtents"][1].get<float>() };
             c.offset = { jc["offset"][0].get<float>(), jc["offset"][1].get<float>() };
+            c.isTrigger = jc.value("isTrigger", false);
         }
         if (je.contains("Physics2D")) {
             auto& p = scene.physics[id];

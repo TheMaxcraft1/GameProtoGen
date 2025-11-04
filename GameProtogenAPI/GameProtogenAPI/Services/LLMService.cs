@@ -30,15 +30,20 @@ namespace GameProtogenAPI.Services
                 cfg["AZURE_INFERENCE_API_KEY"] ??
                 Environment.GetEnvironmentVariable("AZURE_INFERENCE_API_KEY");
 
+            var modelName = cfg["LLM:MODEL"] ??
+                cfg["MODEL"] ??
+                Environment.GetEnvironmentVariable("MODEL")
+                ?? "gpt-5-mini"; // Default ( local tests )
+
             if (string.IsNullOrWhiteSpace(azureAIInferenceEndpoint))
                 throw new InvalidOperationException("Falta AzureAI Endpoint (AzureAI:Endpoint o AZURE_OPENAI_ENDPOINT).");
             if (string.IsNullOrWhiteSpace(azureAIInferenceApiKey))
                 throw new InvalidOperationException("Falta AzureAI ApiKey (AzureAI:ApiKey o AZURE_OPENAI_API_KEY).");
+            if (string.IsNullOrWhiteSpace(modelName))
+                throw new InvalidOperationException("Falta AzureAI ApiKey (AzureAI:ApiKey o AZURE_OPENAI_API_KEY).");
 
             _kernel = Kernel.CreateBuilder()
-                //.AddAzureAIInferenceChatCompletion("grok-4-fast-reasoning", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
-                //.AddAzureAIInferenceChatCompletion("phi-4-mini-reasoning", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
-                .AddAzureAIInferenceChatCompletion("gpt-5-mini", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
+                .AddAzureAIInferenceChatCompletion(modelName, azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
                 .Build();
         }
 
@@ -97,7 +102,9 @@ namespace GameProtogenAPI.Services
                       "reason": "short string (<=200 chars)",
                       "asset_mode": "texture"|"sprite"   // OPTIONAL, REQUIRED if "asset_gen" present
                     }
-                - If the user asks to generate an image/texture/sprite/tile:
+                - If the user asks to generate an image/texture/sprite/tile.:
+                    * also use this if user says something like: "I want this to be <thing>". 
+                        - For example: "I want this cube to be a coin". User don't want a color change. He wants an asset generation.
                     * include "asset_gen"
                     * set "asset_mode" to "texture" when they want a MATERIAL / TILE / BACKGROUND that fills the canvas.
                     * set "asset_mode" to "sprite"   when they want a cutout subject/object with transparent background.
@@ -175,16 +182,24 @@ namespace GameProtogenAPI.Services
                 - Crea plataformas horizontales, no inclinadas.
                 - Ponlas separadas entre sí por un espacio horizontal de al menos 32 pixeles (no pegadas) y en distintas alturas.
                 
-                REGLAS EXTRA (TEXTURAS):
-                - Si el prompt incluye un bloque [ASSETS] con líneas tipo "ASSETk:Assets/.../file.png"
-                  y el usuario pidió aplicarlas (ej. "aplicala al player", "a las 5 plataformas azules"),
-                  entonces:
-                  * Para entidades nuevas en <agregar>, agrega atributo texturePath="Assets/.../file.png" (elige el ASSET correcto).
-                  * Para entidades existentes, crea items en <modificar> con:
-                      <item id="X" propiedad="texturePath" valor="Assets/.../file.png"/>
-                  * En particular, si pide generar un sprite para el jugador, solo debería ser modificar a la entidad del jugador.
+                REGLAS EXTRA (TEXTURAS y SCRIPTS):
+                - Si el prompt incluye un bloque [ASSETS] con líneas tipo:
+                      ASSETk:Assets/.../file.png   (texturas)
+                      SCRIPTk:Assets/Scripts/...lua (scripts)
+                  y el usuario pidió aplicarlas (ej. "aplicala al player", "aplica a 5 plataformas"):
+                  * Para entidades NUEVAS en <agregar>, podés agregar atributos:
+                        texturePath="Assets/.../file.png"
+                        scriptPath="Assets/Scripts/...lua"
+                  * Para entidades EXISTENTES, usa <modificar> con items:
+                        <item id="X" propiedad="texturePath" valor="Assets/.../file.png"/>
+                        <item id="X" propiedad="scriptPath"  valor="Assets/Scripts/...lua"/>
+
                 - Usa ids reales si los menciona el usuario. Si no se mencionan, identifica por tipo ("player", "platform") o por color/tamaño cuando sea obvio.
                 - Mantén coords en múltiplos de 32. No devuelvas nada fuera de <plan>...
+
+                REGLAS DE COLLIDERS/TRIGGERS:
+                + - Para una entidad NUEVA que debe ser trigger, en <agregar/> añadí el atributo isTrigger="true".
+                + - Para entidades EXISTENTES, en <modificar/> usa items con propiedad="isTrigger" y valor="true|false".
 
                 No devuelvas nada fuera de <plan>...</plan>.
                 """;
@@ -248,6 +263,7 @@ namespace GameProtogenAPI.Services
                 Operaciones soportadas (usa exactamente estos campos):
                   - spawn_box:
                     {"op":"spawn_box","pos":[x,y],"size":[w,h],"colorHex":"#RRGGBBAA"?}
+                    {"op":"spawn_box","pos":[x,y],"size":[w,h],"colorHex":"#RRGGBBAA"?,"isTrigger":true?}
 
                   - set_transform:
                     {"op":"set_transform","entity":id,"position":[x,y]?,"scale":[sx,sy]?,"rotation":deg?}
@@ -258,6 +274,7 @@ namespace GameProtogenAPI.Services
                   - set_component (para mutar datos de un componente existente):
                     {"op":"set_component","component":"Sprite","entity":id,"value":{"colorHex":"#RRGGBBAA"|"color":{r,g,b,a}?,"size":[w,h]?}}
                     {"op":"set_component","component":"Texture2D","entity":id,"value":{"path":"Assets/.../file.png"}}
+                    {"op":"set_component","component":"Collider","entity":id,"value":{"isTrigger":true|false}}  // ÚNICO campo permitido
                 
                 REGLAS PARA TEXTURAS:
                 - Si un ítem en <modificar> tiene propiedad="texturePath", emite:
@@ -269,6 +286,16 @@ namespace GameProtogenAPI.Services
                 - Si el usuario pidió “aplicar al player” y el plan lo refleja en <modificar> con texturePath, aplica solo a ese ID.
                 - Mantén EXACTOS los nombres de campos.
 
+                REGLAS PARA TEXTURAS:
+                - Si un ítem en <modificar> tiene propiedad="scriptPath", emite:
+                  {"op":"set_component","component":"Script","entity": ID,"value":{"path":"<valor>"}}
+                - Si una entidad en <agregar> trae atributo scriptPath, además del "spawn_box" correspondiente,
+                  emite otro:
+                  {"op":"set_component","component":"Script","entity":<id_asignado_si_aplica_o_si_el_plan_lo_da>,"value":{"path":"<scriptPath>"}}
+                  (Si no hay ID asignado en el plan para la nueva entidad, omite este paso.)
+                - Si el usuario pidió “aplicar al player” y el plan lo refleja en <modificar> con scriptPath, aplica solo a ese ID.
+                - Mantén EXACTOS los nombres de campos.
+                                
                 REGLAS ESTRICTAS DE FORMATO:
                 - NUNCA uses "entities". NUNCA agrupes varios IDs en una sola operación.
                 - Si el plan menciona múltiples entidades, genera N operaciones separadas (una por entidad).
@@ -279,6 +306,9 @@ namespace GameProtogenAPI.Services
                 - No incluyas comentarios, ni texto fuera del JSON.
                 - Si el color no especifica alfa, usa AA=FF (opaco).
                 - NUNCA emitas AA=00 a menos que el usuario pida explícitamente transparencia/invisibilidad.
+                - Si en <agregar/> encuentras isTrigger="true", además del spawn_box emite:
+                    {"op":"set_component","component":"Collider","entity":<id_si_corresponde>,"value":{"isTrigger":true}}
+                - Si en <modificar/> hay propiedad="isTrigger", emite set_component/Collider con {"isTrigger": <valor>}.
                 """;
 
             var user = $"""
@@ -495,6 +525,9 @@ namespace GameProtogenAPI.Services
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Fallo generando imagen");
+                if (ex.Message.Contains("HTTP 400 (image_generation_user_error: moderation_blocked)"))
+                    return System.Text.Json.JsonSerializer.Serialize(new { kind = "text", message = "El contenido solicitado no cumple con las políticas de uso. No intentes generar imagenes de marcas regitradas." });
+
                 return System.Text.Json.JsonSerializer.Serialize(new { kind = "text", message = $"No pude generar la imagen: {ex.Message}" });
             }
 
@@ -524,9 +557,11 @@ namespace GameProtogenAPI.Services
 
                             Target VM (Lua 5.4, sol2). Scripts run in an environment with:
                               - Global: this_id (uint)
+                              - Global function: gameReset()  -- Reloads the current scene from disk and restarts play. Call at end-of-game.
                               - Optional callbacks:
                                   function on_spawn() end
                                   function on_update(dt) end   -- dt in seconds (float)
+                                  function on_trigger_enter(other_id) end -- Use this if user asks for something collectible, like a coin.
 
                             Engine API (exposed as global table `ecs`):
                               -- Entity ops
@@ -556,6 +591,13 @@ namespace GameProtogenAPI.Services
                               - Prefer ecs.get/ecs.set.
                               - If you need the player: local pid = ecs.first_with("PlayerController")
                               - Comments can match user language; code is Lua.
+                              - If user asks for trigger enter logic, as collecting a coin, use on_trigger_enter callback.
+                              - Assume that Collider is already with isTrigger=true (do not change halfExtents/offset).
+
+                            Win/Lose & gameReset:
+                              - If the user specifies a win or lose condition (e.g., "reach goal", "timer expired", "lives==0", "player fell below y", "collect N items"), implement detection in on_update (and/or on_trigger_enter when relevant).
+                              - On first detection of victory or defeat, call gameReset() to restart the scene.
+                              - Never change scene paths or attempt to persist state across resets from Lua.
 
                             Deliver JSON only (no fences, no extra text).
                         """;

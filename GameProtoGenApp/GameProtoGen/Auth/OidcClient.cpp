@@ -1,6 +1,6 @@
 #include <cppcodec/base64_url_unpadded.hpp>
 #include "OidcClient.h"
-#include "PKCE.h"                 // OJO: respeta mayúsculas como está en tu CMake
+#include "PKCE.h"
 #include "LoopbackServer.h"
 
 #include <nlohmann/json.hpp>
@@ -65,7 +65,7 @@ std::optional<OidcTokens> OidcClient::AcquireTokenInteractive(std::string* err) 
     const std::string state =
         cppcodec::base64_url_unpadded::encode("st-" + pkce.verifier.substr(0, 16));
 
-    // ⚠️ Construir la URL a mano (sin cpr::Parameters::GetContent ni .parameters)
+    // Construir la URL a mano 
     const std::string authz_url =
         m_Cfg.authorize_endpoint
         + "?client_id=" + enc(m_Cfg.client_id)

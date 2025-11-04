@@ -1,4 +1,3 @@
-// GameProtoGenApp/GameProtoGen/Editor/EditorApp.cpp
 #include "Core/Application.h"
 #include "Core/SFMLWindow.h"
 #include "Panels/InspectorPanel.h"
@@ -86,7 +85,8 @@ public:
         Log::SetSink(&s_sink);
 
         // ApiClient (HTTPS con tu backend en 7223)
-        auto client = std::make_shared<ApiClient>("https://localhost:7223");
+        //auto client = std::make_shared<ApiClient>("https://localhost:7223");
+        auto client = std::make_shared<ApiClient>("https://ca-game-protogen.purplehill-2f1636cc.brazilsouth.azurecontainerapps.io");
         client->SetVerifySsl(true);
         client->UseHttps(true);
         client->SetTimeouts(10, 180, 30);
@@ -118,7 +118,7 @@ public:
             edx.tokenManager->EnsureFresh();
         }
 
-        // Importante: arrancamos con el Launcher (no montes Viewport/Inspector/Chat acá)
+        // Importante: arrancamos con el Launcher
         gp::Application::Get().SetMode(gp::Application::Mode::Hub);
         PushLayer(new LauncherLayer());
         win.SetMaximized(false);
@@ -133,5 +133,3 @@ int main() {
     app.Run();
 }
 
-// // Si querés WinMain:
-// // int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) { return main(); }

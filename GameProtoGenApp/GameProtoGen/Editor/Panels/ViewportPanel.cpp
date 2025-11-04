@@ -1,6 +1,6 @@
 #include "ViewportPanel.h"
 #include "Runtime/SceneContext.h"
-#include "Runtime/EditorContext.h"   // ⬅️ nuevo
+#include "Runtime/EditorContext.h"
 #include "Runtime/GameRunner.h"
 
 #include <imgui.h>
@@ -9,6 +9,8 @@
 #include <optional>
 #include <cmath>
 #include <algorithm>
+#include "ECS/SceneSerializer.h"
+#include <filesystem>
 
 std::vector<std::string> ViewportPanel::s_Log{};  // ← DEFINICIÓN ÚNICA
 
@@ -35,6 +37,7 @@ void ViewportPanel::OnAttach() {
     m_IcoPan.setSmooth(true);
     m_IcoRotate.setSmooth(true);
     m_IcoScale.setSmooth(true);
+
 }
 
 void ViewportPanel::EnsureRT() {
@@ -67,6 +70,74 @@ void ViewportPanel::EnsureRT() {
     }
 }
 
+// --- AABB por entidad en coordenadas de mundo ---
+sf::FloatRect ViewportPanel::EntityWorldAABB(EntityID id) const {
+    auto& scx = SceneContext::Get();
+    if (!scx.scene) return sf::FloatRect({ 0.f, 0.f }, { 0.f, 0.f });
+    if (!scx.scene->transforms.contains(id)) return sf::FloatRect({ 0.f, 0.f }, { 0.f, 0.f });
+
+    const auto& t = scx.scene->transforms.at(id);
+    const sf::Vector2f scaleAbs{ std::abs(t.scale.x), std::abs(t.scale.y) };
+
+    sf::Vector2f he{ 0.f, 0.f };
+    sf::Vector2f offset{ 0.f, 0.f };
+
+    if (auto itS = scx.scene->sprites.find(id); itS != scx.scene->sprites.end()) {
+        he = {
+            (itS->second.size.x * scaleAbs.x) * 0.5f,
+            (itS->second.size.y * scaleAbs.y) * 0.5f
+        };
+    }
+    else if (auto itC = scx.scene->colliders.find(id); itC != scx.scene->colliders.end()) {
+        he = {
+            itC->second.halfExtents.x * scaleAbs.x,
+            itC->second.halfExtents.y * scaleAbs.y
+        };
+        offset = itC->second.offset;
+    }
+    else {
+        return sf::FloatRect({ 0.f, 0.f }, { 0.f, 0.f });
+    }
+
+    const sf::Vector2f center = t.position + offset;
+    const sf::Vector2f min{ center.x - he.x, center.y - he.y };
+    const sf::Vector2f size{ he.x * 2.f, he.y * 2.f }; // (max - min)
+
+    return sf::FloatRect(min, size);
+}
+
+std::vector<EntityID> ViewportPanel::PickEntitiesInAABB(const sf::FloatRect& box) const {
+    std::vector<EntityID> out;
+    auto& scx = SceneContext::Get();
+    if (!scx.scene) return out;
+
+    // Precalcular bordes del box pedido
+    const float boxLeft = box.position.x;
+    const float boxTop = box.position.y;
+    const float boxRight = box.position.x + box.size.x;
+    const float boxBottom = box.position.y + box.size.y;
+
+    const auto& entities = scx.scene->Entities();
+    for (auto it = entities.rbegin(); it != entities.rend(); ++it) {
+        const EntityID id = it->id;
+
+        const sf::FloatRect aabb = EntityWorldAABB(id);
+        if (aabb.size.x <= 0.f || aabb.size.y <= 0.f) continue;
+
+        const float aLeft = aabb.position.x;
+        const float aTop = aabb.position.y;
+        const float aRight = aabb.position.x + aabb.size.x;
+        const float aBottom = aabb.position.y + aabb.size.y;
+
+        const bool intersects =
+            (aLeft <= boxRight) && (aRight >= boxLeft) &&
+            (aTop <= boxBottom) && (aBottom >= boxTop);
+
+        if (intersects) out.push_back(id);
+    }
+    return out;
+}
+
 void ViewportPanel::OnUpdate(const gp::Timestep& dt) {
     auto& scx = SceneContext::Get();
     if (!scx.scene) return;
@@ -80,6 +151,17 @@ void ViewportPanel::OnGuiRender() {
     auto& scx = SceneContext::Get();
     auto& edx = EditorContext::Get();
 
+    if (!edx.projectPath.empty())
+        GameRunner::SetScenePath(edx.projectPath);
+
+    // ---------- estado local para marquee y drag de grupo (persisten entre frames) ----------
+    static bool           s_BoxSelecting = false;
+    static ImVec2         s_BoxStart{ 0,0 }, s_BoxEnd{ 0,0 };
+    static bool           s_GroupDragging = false;
+    static sf::Vector2f   s_LastWorld{ 0.f, 0.f };
+    static sf::Vector2f   s_GroupStartWorld{ 0.f, 0.f };
+    static sf::Vector2f   s_GroupLastSnapped{ 0.f, 0.f };
+
     // Se usa cuando se duplica una entidad.
     if (edx.requestSelectTool) {
         m_Tool = Tool::Select;
@@ -87,19 +169,50 @@ void ViewportPanel::OnGuiRender() {
     }
 
     auto TogglePlay = [&]() {
-        bool wasPlaying = m_Playing;
-        m_Playing = !m_Playing;
+        auto& scx = SceneContext::Get();
+        auto& edx = EditorContext::Get();
 
+        // reset gestos
         m_Dragging = false;
         m_DragEntity = 0;
         m_Panning = false;
+        s_BoxSelecting = false;
+        s_GroupDragging = false;
 
-        edx.runtime.playing = m_Playing;
-        AppendLog(std::string("Runtime: ") + (m_Playing ? "Play" : "Pause"));
+        const bool toPlay = !m_Playing;
+        if (toPlay) {
+            if (!scx.scene) return;
+            // snapshot profundo
+            edx.runtime.sceneBackup = std::make_shared<Scene>(*scx.scene);
+            edx.runtime.cameraBackup = m_CamCenter;
+            edx.runtime.selectedBackup = edx.selected;
+            std::string path = edx.projectPath;
 
-        if (scx.scene) {
-            if (!wasPlaying && m_Playing)  GameRunner::EnterPlay(*scx.scene);
-            if (wasPlaying && !m_Playing)  GameRunner::ExitPlay(*scx.scene);
+            if (!SceneSerializer::Save(*scx.scene, edx.projectPath)) {
+                AppendLog(std::string("❌ No se pudo guardar la escena en: ") + path);
+                // No entrar en Play si no se pudo guardar
+                return;
+            }
+
+            GameRunner::EnterPlay(*scx.scene);
+            m_Playing = true;
+            edx.runtime.playing = true;
+            AppendLog("Runtime: Play");
+        }
+        else {
+            if (scx.scene) GameRunner::ExitPlay(*scx.scene);
+
+            if (edx.runtime.sceneBackup) {
+                scx.scene = edx.runtime.sceneBackup;
+                edx.runtime.sceneBackup.reset();
+            }
+            m_CamCenter = edx.runtime.cameraBackup;
+            scx.cameraCenter = m_CamCenter;
+            edx.selected = edx.runtime.selectedBackup;
+
+            m_Playing = false;
+            edx.runtime.playing = false;
+            AppendLog("Runtime: Stop (escena restaurada)");
         }
         };
 
@@ -119,7 +232,7 @@ void ViewportPanel::OnGuiRender() {
     if (IconButtonPlayPause()) TogglePlay();
     ImGui::SameLine(0.f, 12.f);
 
-    // Pan temporal (Q o Espacio)
+    // Pan temporal (Q o Space)
     const bool panChord = (!m_Playing) && (ImGui::IsKeyDown(ImGuiKey_Q) || ImGui::IsKeyDown(ImGuiKey_Space));
 
     // Herramientas (deshabilitadas en Play)
@@ -174,7 +287,6 @@ void ViewportPanel::OnGuiRender() {
         if (ImGui::IsKeyPressed(ImGuiKey_4)) m_Tool = Tool::Scale;
     }
     ImGui::EndDisabled();
-
     ImGui::EndChild();
 
     // ───────────────────────── Viewport area ───────────────────────────
@@ -222,8 +334,29 @@ void ViewportPanel::OnGuiRender() {
             // Objetos
             GameRunner::Render(*scx.scene, *m_RT, m_CamCenter, { m_VirtW, m_VirtH });
 
-            // Gizmo de selección SOLO en pausa
-            if (!m_Playing) DrawSelectionGizmo(*m_RT);
+            // Gizmos de selección (simple y múltiple) SOLO en pausa
+            if (!m_Playing) {
+                // seleccionado simple
+                if (edx.selected) {
+                    DrawSelectionGizmos(*m_RT);
+                }
+                // seleccionados múltiples (usar AABB helper)
+                if (!edx.multiSelected.empty()) {
+                    for (auto id : edx.multiSelected) {
+                        sf::FloatRect r = EntityWorldAABB(id);
+                        if (r.size.x <= 0.f || r.size.y <= 0.f) continue;
+
+                        sf::RectangleShape box;
+                        box.setSize(sf::Vector2f{ r.size.x, r.size.y });
+                        box.setOrigin({ 0.f, 0.f });
+                        box.setPosition(r.position);
+                        box.setFillColor(sf::Color(0, 0, 0, 0));
+                        box.setOutlineColor(sf::Color(120, 200, 255)); // multi: celeste
+                        box.setOutlineThickness(2.f);
+                        m_RT->draw(box);
+                    }
+                }
+            }
         }
         m_RT->display();
 
@@ -242,12 +375,11 @@ void ViewportPanel::OnGuiRender() {
         if (offset.x < 0) offset.x = 0;
         if (offset.y < 0) offset.y = 0;
         ImGui::SetCursorPos(ImVec2(cur.x + offset.x, cur.y + offset.y));
-
         ImGui::Image(m_PresentRT->getTexture(), imgSize);
 
-        // --- Picking / Drag / Pan ---
-        ImVec2 imgMin = ImGui::GetItemRectMin();
-        ImVec2 imgMax = ImGui::GetItemRectMax();
+        // --- Picking / Drag / Pan / Marquee ---
+        ImVec2   imgMin = ImGui::GetItemRectMin();
+        ImVec2   imgMax = ImGui::GetItemRectMax();
         ImGuiIO& io = ImGui::GetIO();
 
         // PAN (sólo en pausa)
@@ -267,6 +399,8 @@ void ViewportPanel::OnGuiRender() {
                 m_Panning = true;
                 m_Dragging = false;
                 m_DragEntity = 0;
+                s_BoxSelecting = false;
+                s_GroupDragging = false;
             }
 
             // Actualizar pan
@@ -298,6 +432,7 @@ void ViewportPanel::OnGuiRender() {
                         if (scx.scene && hit) {
                             if (!edx.selected || edx.selected.id != hit) {
                                 edx.selected = Entity{ hit };
+                                edx.multiSelected.clear(); // rotar individual
                                 AppendLog("Seleccionado entity id=" + std::to_string(hit));
                             }
 
@@ -377,6 +512,7 @@ void ViewportPanel::OnGuiRender() {
                         if (scx.scene && hit) {
                             if (!edx.selected || edx.selected.id != hit) {
                                 edx.selected = Entity{ hit };
+                                edx.multiSelected.clear(); // escalar individual
                                 AppendLog("Seleccionado entity id=" + std::to_string(hit));
                             }
                             if (scx.scene->transforms.contains(hit)) {
@@ -466,58 +602,266 @@ void ViewportPanel::OnGuiRender() {
             }
         }
 
-        // SELECT / DRAG (sólo en pausa)
+        // SELECT + MULTISELECT + MARQUEE (sólo en pausa)
         if (!m_Playing && m_Tool == Tool::Select && !m_Panning) {
-            if (ImGui::IsItemHovered()) {
+            const bool hovered = ImGui::IsItemHovered();
+
+            if (hovered) {
                 if (auto worldOpt = ScreenToWorld(io.MousePos, imgMin, imgMax)) {
                     sf::Vector2f world = *worldOpt;
 
-                    // Click para seleccionar + comenzar drag
+                    // Iniciar interacciones
                     if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-                        EntityID id = PickEntityAt(world);
-                        if (scx.scene && id) {
-                            edx.selected = Entity{ id };
-                            m_Dragging = true;
-                            m_DragEntity = id;
-                            m_DragOffset = scx.scene->transforms[id].position - world;
-                            AppendLog("Seleccionado entity id=" + std::to_string(id));
+                        EntityID hit = PickEntityAt(world);
+
+                        if (io.KeyCtrl) {
+                            // CTRL + click: toggle en selección múltiple, sin forzar foco
+                            if (scx.scene && hit) {
+                                const bool wasFocused = (edx.selected && edx.selected.id == hit);
+
+                                if (edx.multiSelected.count(hit)) {
+                                    // quitar de multi
+                                    edx.multiSelected.erase(hit);
+
+                                    // si quitaste el enfocado, reasignar foco
+                                    if (wasFocused) {
+                                        if (!edx.multiSelected.empty()) {
+                                            edx.selected = Entity{ *edx.multiSelected.begin() };
+                                        }
+                                        else {
+                                            edx.selected = Entity{};
+                                        }
+                                    }
+                                }
+                                else {
+                                    // si había selección simple previa y aún no estamos en multi, preservarla
+                                    if (edx.selected && edx.multiSelected.empty() && edx.selected.id != hit)
+                                        edx.multiSelected.insert(edx.selected.id);
+
+                                    // agregar a multi
+                                    edx.multiSelected.insert(hit);
+
+                                    // no cambiamos foco salvo que no haya ninguno
+                                    if (!edx.selected) edx.selected = Entity{ hit };
+                                }
+
+                                AppendLog(std::string("Toggle multi id=") + std::to_string(hit));
+                                // no arrancar drag con Ctrl
+                                m_Dragging = false;
+                                s_GroupDragging = false;
+                            }
+                            else {
+                                // CTRL + click vacío -> iniciar marquee
+                                s_BoxSelecting = true;
+                                s_BoxStart = io.MousePos;
+                                s_BoxEnd = io.MousePos;
+                                m_Dragging = false;
+                                s_GroupDragging = false;
+                            }
                         }
                         else {
-                            edx.selected = Entity{};
+                            // Click normal
+                            if (scx.scene && hit) {
+                                const bool hitIsInMulti = edx.multiSelected.count(hit) > 0;
+                                const bool thereIsMulti = !edx.multiSelected.empty();
+
+                                if (thereIsMulti && hitIsInMulti) {
+                                    // ⬅️ Clic en uno de los ya multiseleccionados:
+                                    //    - NO limpiar multi
+                                    //    - dar foco al clickeado
+                                    //    - preparar arrastre grupal (se activa al mover)
+                                    edx.selected = Entity{ hit };
+                                    m_Dragging = false;
+                                    m_DragEntity = 0;
+                                    s_GroupDragging = false;      // lo activamos cuando detectamos movimiento
+                                    s_LastWorld = world;          // base para delta
+                                    AppendLog("Foco en multi, listo para drag grupal");
+                                }
+                                else {
+                                    // ⬅️ Clic en entidad fuera del set (o no había multi):
+                                    //     selección simple y drag individual como antes
+                                    edx.multiSelected.clear();
+                                    edx.selected = Entity{ hit };
+                                    m_Dragging = true;
+                                    m_DragEntity = hit;
+                                    m_DragOffset = scx.scene->transforms[hit].position - world;
+                                    s_GroupDragging = false;
+                                    s_LastWorld = world;
+                                    AppendLog("Seleccionado entity id=" + std::to_string(hit));
+                                }
+                            }
+                            else {
+                                // click vacío: limpiar selección e iniciar marquee si se arrastra
+                                edx.selected = Entity{};
+                                edx.multiSelected.clear();
+                                s_BoxSelecting = true;
+                                s_BoxStart = io.MousePos;
+                                s_BoxEnd = io.MousePos;
+                                m_Dragging = false;
+                                s_GroupDragging = false;
+                            }
                         }
                     }
 
-                    // Arrastre
-                    if (m_Dragging && ImGui::IsMouseDown(ImGuiMouseButton_Left) && m_DragEntity) {
-                        if (scx.scene && scx.scene->transforms.contains(m_DragEntity)) {
-                            sf::Vector2f pos = world + m_DragOffset;
-                            if (m_Grid > 0.0f) {
-                                pos.x = std::round(pos.x / m_Grid) * m_Grid;
-                                pos.y = std::round(pos.y / m_Grid) * m_Grid;
-                            }
-                            scx.scene->transforms[m_DragEntity].position = pos;
+                    // Arrastre en curso
+                    if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                        // Marquee si está activo
+                        if (s_BoxSelecting) {
+                            s_BoxEnd = io.MousePos;
+                        }
+                        else {
+                            // Drag de grupo si hay multi
+                            if (!edx.multiSelected.empty()) {
+                                if (!s_GroupDragging && (std::fabs(io.MouseDelta.x) > 0.0f || std::fabs(io.MouseDelta.y) > 0.0f)) {
+                                    s_GroupDragging = true;
+                                    s_LastWorld = world;
 
-                            if (scx.scene->physics.contains(m_DragEntity)) {
-                                auto& ph = scx.scene->physics[m_DragEntity];
-                                ph.velocity = { 0.f, 0.f };
-                                ph.onGround = false;
+                                    // ⬇️ reset de acumuladores de snap
+                                    s_GroupStartWorld = world;
+                                    s_GroupLastSnapped = { 0.f, 0.f };
+                                }
+                                if (s_GroupDragging) {
+                                    // ⬇️ SNAP por grilla si hay m_Grid, sino comportamiento viejo
+                                    if (m_Grid > 0.0f) {
+                                        sf::Vector2f accum = world - s_GroupStartWorld;
+                                        sf::Vector2f snapped{
+                                            std::round(accum.x / m_Grid) * m_Grid,
+                                            std::round(accum.y / m_Grid) * m_Grid
+                                        };
+                                        sf::Vector2f deltaSnap = snapped - s_GroupLastSnapped;
+
+                                        if (deltaSnap.x != 0.f || deltaSnap.y != 0.f) {
+                                            for (auto id : edx.multiSelected) {
+                                                if (!scx.scene->transforms.contains(id)) continue;
+                                                auto& t = scx.scene->transforms[id];
+                                                t.position += deltaSnap;
+
+                                                if (scx.scene->physics.contains(id)) {
+                                                    auto& ph = scx.scene->physics[id];
+                                                    ph.velocity = { 0.f, 0.f };
+                                                    ph.onGround = false;
+                                                }
+                                            }
+                                            s_GroupLastSnapped = snapped;
+                                        }
+                                    }
+                                    else {
+                                        // comportamiento original sin snap
+                                        sf::Vector2f delta = world - s_LastWorld;
+                                        if (delta.x != 0.f || delta.y != 0.f) {
+                                            for (auto id : edx.multiSelected) {
+                                                if (!scx.scene->transforms.contains(id)) continue;
+                                                auto& t = scx.scene->transforms[id];
+                                                t.position += delta;
+                                                if (scx.scene->physics.contains(id)) {
+                                                    auto& ph = scx.scene->physics[id];
+                                                    ph.velocity = { 0.f, 0.f };
+                                                    ph.onGround = false;
+                                                }
+                                            }
+                                            s_LastWorld = world;
+                                        }
+                                    }
+                                }
+                            }
+                            // Arrastre simple
+                            else if (m_Dragging && m_DragEntity) {
+                                if (scx.scene && scx.scene->transforms.contains(m_DragEntity)) {
+                                    sf::Vector2f pos = world + m_DragOffset;
+                                    if (m_Grid > 0.0f) {
+                                        pos.x = std::round(pos.x / m_Grid) * m_Grid;
+                                        pos.y = std::round(pos.y / m_Grid) * m_Grid;
+                                    }
+                                    scx.scene->transforms[m_DragEntity].position = pos;
+
+                                    if (scx.scene->physics.contains(m_DragEntity)) {
+                                        auto& ph = scx.scene->physics[m_DragEntity];
+                                        ph.velocity = { 0.f, 0.f };
+                                        ph.onGround = false;
+                                    }
+                                }
                             }
                         }
+                    }
+
+                    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                        if (s_BoxSelecting) {
+                            // Convertir rect de pantalla a rect en mundo y seleccionar por intersección
+                            ImVec2 rectMin{ std::min(s_BoxStart.x, s_BoxEnd.x), std::min(s_BoxStart.y, s_BoxEnd.y) };
+                            ImVec2 rectMax{ std::max(s_BoxStart.x, s_BoxEnd.x), std::max(s_BoxStart.y, s_BoxEnd.y) };
+
+                            // Early-out si es clic sin arrastre
+                            const float kMinPick = 2.0f;
+                            if (std::fabs(rectMax.x - rectMin.x) > kMinPick || std::fabs(rectMax.y - rectMin.y) > kMinPick) {
+                                auto w0 = ScreenToWorld(rectMin, imgMin, imgMax);
+                                auto w1 = ScreenToWorld(rectMax, imgMin, imgMax);
+                                if (w0 && w1 && scx.scene) {
+                                    sf::Vector2f wmin{ std::min(w0->x, w1->x), std::min(w0->y, w1->y) };
+                                    sf::Vector2f wmax{ std::max(w0->x, w1->x), std::max(w0->y, w1->y) };
+
+                                    // SFML 3: Rect(pos, size)
+                                    sf::FloatRect pickBox(
+                                        sf::Vector2f{ wmin.x, wmin.y },
+                                        sf::Vector2f{ wmax.x - wmin.x, wmax.y - wmin.y }
+                                    );
+
+                                    // usar helper para obtener ids intersectados
+                                    std::vector<EntityID> hits = PickEntitiesInAABB(pickBox);
+                                    const bool additive = io.KeyCtrl;
+
+                                    if (!additive) {
+                                        // Reemplazar selección
+                                        edx.multiSelected.clear();
+                                        edx.selected = Entity{};
+                                        for (auto id : hits) edx.multiSelected.insert(id);
+                                        if (!hits.empty()) edx.selected = Entity{ hits.front() }; // foco en alguno
+                                    }
+                                    else {
+                                        // Toggle por intersección (aditivo)
+                                        for (auto id : hits) {
+                                            if (edx.multiSelected.count(id)) edx.multiSelected.erase(id);
+                                            else edx.multiSelected.insert(id);
+                                        }
+                                        // Corrección de foco:
+                                        if (edx.selected && !edx.multiSelected.empty() && !edx.multiSelected.count(edx.selected.id)) {
+                                            // el enfocado salió del set -> enfocar otro
+                                            edx.selected = Entity{ *edx.multiSelected.begin() };
+                                        }
+                                        else if (edx.multiSelected.empty()) {
+                                            // si quedó vacío, limpiar foco también
+                                            edx.selected = Entity{};
+                                        }
+                                    }
+
+                                    AppendLog("Marquee select: " + std::to_string((int)edx.multiSelected.size()) + " entidades");
+                                }
+                            }
+                            s_BoxSelecting = false;
+                        }
+
+                        if (m_Dragging && m_DragEntity) {
+                            if (scx.scene && scx.scene->transforms.contains(m_DragEntity)) {
+                                const auto p = scx.scene->transforms[m_DragEntity].position;
+                                AppendLog("Soltado entity id=" + std::to_string(m_DragEntity) +
+                                    " en (" + std::to_string((int)p.x) + "," + std::to_string((int)p.y) + ")");
+                            }
+                        }
+                        m_Dragging = false;
+                        m_DragEntity = 0;
+                        s_GroupDragging = false;
                     }
                 }
             }
 
-            // Soltar drag
-            if (m_Dragging && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-                if (m_DragEntity) {
-                    if (scx.scene && scx.scene->transforms.contains(m_DragEntity)) {
-                        const auto p = scx.scene->transforms[m_DragEntity].position;
-                        AppendLog("Soltado entity id=" + std::to_string(m_DragEntity) +
-                            " en (" + std::to_string((int)p.x) + "," + std::to_string((int)p.y) + ")");
-                    }
-                }
-                m_Dragging = false;
-                m_DragEntity = 0;
+            // Dibujar marquee en overlay (si activo)
+            if (s_BoxSelecting) {
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                ImU32 colFill = ImGui::GetColorU32(ImVec4(0.2f, 0.6f, 1.0f, 0.15f));
+                ImU32 colLine = ImGui::GetColorU32(ImVec4(0.2f, 0.6f, 1.0f, 0.9f));
+                ImVec2 a{ std::min(s_BoxStart.x, s_BoxEnd.x), std::min(s_BoxStart.y, s_BoxEnd.y) };
+                ImVec2 b{ std::max(s_BoxStart.x, s_BoxEnd.x), std::max(s_BoxStart.y, s_BoxEnd.y) };
+                dl->AddRectFilled(a, b, colFill, 2.0f);
+                dl->AddRect(a, b, colLine, 2.0f, 0, 2.0f);
             }
         }
     }
@@ -599,38 +943,49 @@ EntityID ViewportPanel::PickEntityAt(const sf::Vector2f& worldPos) const {
 
 // --------------------------- Gizmos / dibujo ---------------------------
 
-void ViewportPanel::DrawSelectionGizmo(sf::RenderTarget& rt) const {
+void ViewportPanel::DrawSelectionGizmos(sf::RenderTarget& rt) const {
     auto& scx = SceneContext::Get();
     auto& edx = EditorContext::Get();
-    if (!scx.scene || !edx.selected) return;
+    if (!scx.scene) return;
 
-    EntityID id = edx.selected.id;
-    if (!scx.scene->transforms.contains(id)) return;
-    const auto& t = scx.scene->transforms.at(id);
+    auto drawOne = [&](EntityID id) {
+        if (!scx.scene->transforms.contains(id)) return;
 
-    sf::Vector2f he{ 0.f, 0.f };
-    sf::Vector2f offset{ 0.f, 0.f };
-    sf::Vector2f scaleAbs{ std::abs(t.scale.x), std::abs(t.scale.y) };
+        const auto& t = scx.scene->transforms.at(id);
+        sf::Vector2f he{ 0.f,0.f };
+        sf::Vector2f offset{ 0.f,0.f };
+        sf::Vector2f scaleAbs{ std::abs(t.scale.x), std::abs(t.scale.y) };
 
-    if (auto itS = scx.scene->sprites.find(id); itS != scx.scene->sprites.end()) {
-        he = { (itS->second.size.x * scaleAbs.x) * 0.5f,
-               (itS->second.size.y * scaleAbs.y) * 0.5f };
+        if (auto itS = scx.scene->sprites.find(id); itS != scx.scene->sprites.end()) {
+            he = { (itS->second.size.x * scaleAbs.x) * 0.5f,
+                   (itS->second.size.y * scaleAbs.y) * 0.5f };
+        }
+        else if (auto itC = scx.scene->colliders.find(id); itC != scx.scene->colliders.end()) {
+            he = { itC->second.halfExtents.x * scaleAbs.x,
+                   itC->second.halfExtents.y * scaleAbs.y };
+            offset = itC->second.offset;
+        }
+        else return;
+
+        sf::RectangleShape box;
+        box.setSize(sf::Vector2f{ he.x * 2.f, he.y * 2.f });
+        box.setOrigin(he);
+        box.setPosition(t.position + offset);
+        box.setFillColor(sf::Color(0, 0, 0, 0));
+
+        // primaria en dorado, resto en celeste
+        bool isPrimary = (edx.selected && edx.selected.id == id);
+        box.setOutlineColor(isPrimary ? sf::Color(255, 220, 80) : sf::Color(80, 200, 255));
+        box.setOutlineThickness(2.f);
+        rt.draw(box);
+        };
+
+    // primaria
+    if (edx.selected) drawOne(edx.selected.id);
+    // resto
+    for (auto id : edx.multiSelected) {
+        if (!edx.selected || edx.selected.id != id) drawOne(id);
     }
-    else if (auto itC = scx.scene->colliders.find(id); itC != scx.scene->colliders.end()) {
-        he = { itC->second.halfExtents.x * scaleAbs.x,
-               itC->second.halfExtents.y * scaleAbs.y };
-        offset = itC->second.offset;
-    }
-    else return;
-
-    sf::RectangleShape box;
-    box.setSize(sf::Vector2f{ he.x * 2.f, he.y * 2.f });
-    box.setOrigin(he);
-    box.setPosition(t.position + offset);
-    box.setFillColor(sf::Color(0, 0, 0, 0));
-    box.setOutlineColor(sf::Color(255, 220, 80));
-    box.setOutlineThickness(2.f);
-    rt.draw(box);
 }
 
 void ViewportPanel::DrawGrid(sf::RenderTarget& rt) const {
