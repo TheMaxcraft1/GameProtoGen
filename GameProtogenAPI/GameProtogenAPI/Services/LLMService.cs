@@ -30,15 +30,20 @@ namespace GameProtogenAPI.Services
                 cfg["AZURE_INFERENCE_API_KEY"] ??
                 Environment.GetEnvironmentVariable("AZURE_INFERENCE_API_KEY");
 
+            var modelName = cfg["LLM:MODEL"] ??
+                cfg["MODEL"] ??
+                Environment.GetEnvironmentVariable("MODEL")
+                ?? "gpt-5-mini"; // Default ( local tests )
+
             if (string.IsNullOrWhiteSpace(azureAIInferenceEndpoint))
                 throw new InvalidOperationException("Falta AzureAI Endpoint (AzureAI:Endpoint o AZURE_OPENAI_ENDPOINT).");
             if (string.IsNullOrWhiteSpace(azureAIInferenceApiKey))
                 throw new InvalidOperationException("Falta AzureAI ApiKey (AzureAI:ApiKey o AZURE_OPENAI_API_KEY).");
+            if (string.IsNullOrWhiteSpace(modelName))
+                throw new InvalidOperationException("Falta AzureAI ApiKey (AzureAI:ApiKey o AZURE_OPENAI_API_KEY).");
 
             _kernel = Kernel.CreateBuilder()
-                //.AddAzureAIInferenceChatCompletion("grok-4-fast-reasoning", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
-                //.AddAzureAIInferenceChatCompletion("phi-4-mini-reasoning", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
-                .AddAzureAIInferenceChatCompletion("gpt-5-mini", azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
+                .AddAzureAIInferenceChatCompletion(modelName, azureAIInferenceApiKey, new Uri(azureAIInferenceEndpoint))
                 .Build();
         }
 
