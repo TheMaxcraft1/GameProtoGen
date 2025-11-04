@@ -87,21 +87,56 @@ void ViewportPanel::OnGuiRender() {
     }
 
     auto TogglePlay = [&]() {
-        bool wasPlaying = m_Playing;
-        m_Playing = !m_Playing;
+        auto& scx = SceneContext::Get();
+        auto& edx = EditorContext::Get();
 
+        const bool wasPlaying = m_Playing;
+        const bool toPlay = !m_Playing;
+
+        // reset de gestos de edición
         m_Dragging = false;
         m_DragEntity = 0;
         m_Panning = false;
 
-        edx.runtime.playing = m_Playing;
-        AppendLog(std::string("Runtime: ") + (m_Playing ? "Play" : "Pause"));
+        if (toPlay) {
+            // ──────────────── ENTER PLAY ────────────────
+            if (!scx.scene) return;
+            // 1) snapshot profundo de la escena
+            edx.runtime.sceneBackup = std::make_shared<Scene>(*scx.scene);
+            // 2) backup de cámara + selección
+            edx.runtime.cameraBackup = m_CamCenter;
+            edx.runtime.selectedBackup = edx.selected;
 
-        if (scx.scene) {
-            if (!wasPlaying && m_Playing)  GameRunner::EnterPlay(*scx.scene);
-            if (wasPlaying && !m_Playing)  GameRunner::ExitPlay(*scx.scene);
+            // 3) runtime on
+            GameRunner::EnterPlay(*scx.scene);
+            m_Playing = true;
+            edx.runtime.playing = true;
+
+            AppendLog("Runtime: Play");
         }
-        };
+        else {
+            // ──────────────── EXIT PLAY ────────────────
+            if (scx.scene) {
+                GameRunner::ExitPlay(*scx.scene);
+            }
+
+            // 1) restaurar snapshot si lo tenemos
+            if (edx.runtime.sceneBackup) {
+                scx.scene = edx.runtime.sceneBackup;
+                edx.runtime.sceneBackup.reset();
+            }
+
+            m_CamCenter = edx.runtime.cameraBackup;
+            scx.cameraCenter = m_CamCenter;
+            edx.selected = edx.runtime.selectedBackup;
+
+            // 4) runtime off
+            m_Playing = false;
+            edx.runtime.playing = false;
+
+            AppendLog("Runtime: Stop (escena restaurada)");
+        }
+    };
 
     // Hotkey F5
     if (ImGui::IsKeyPressed(ImGuiKey_F5)) TogglePlay();

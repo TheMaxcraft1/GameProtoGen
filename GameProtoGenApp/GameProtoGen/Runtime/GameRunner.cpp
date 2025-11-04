@@ -50,6 +50,21 @@ void GameRunner::EnterPlay(Scene& scene) {
     Systems::CollisionSystem::ResetTriggers();
 }
 
-void GameRunner::ExitPlay(Scene& /*scene*/) {
-    // Hoy no hace nada (podrías descargar scripts, etc.)
+void GameRunner::ExitPlay(Scene& scene) {
+    // 1) Apagar/descartar el estado del VM (borra envs de Lua)
+    Systems::ScriptSystem::ResetVM();
+
+    // 2) Limpiar flags/eventos transitorios de colisiones/trigger
+    Systems::CollisionSystem::ResetTriggers();
+
+    // 3) (Opcional) normalizar estado físico efímero
+    //    No toques posiciones/escena “de diseño” acá.
+    for (auto& [id, ph] : scene.physics) {
+        ph.onGround = false;
+        // ph.velocity = {0.f, 0.f}; // ← descomentá si querés salir sin inercias
+    }
+
+    // 4) (Recomendado) cache gráfico: si cambiaste assets durante Play,
+    //    al volver a edición forzás un reload limpio.
+    Renderer2D::ClearTextureCache();
 }

@@ -12,6 +12,9 @@ struct EditorContext {
     std::string projectPath = "";
     struct RuntimeState {
         bool playing = false;
+        std::shared_ptr<Scene> sceneBackup;
+        sf::Vector2f cameraBackup{ 800.f, 450.f };
+        Entity selectedBackup{};
     } runtime;
     bool requestSelectTool = false; // pedir pasar a herramienta Select
 
