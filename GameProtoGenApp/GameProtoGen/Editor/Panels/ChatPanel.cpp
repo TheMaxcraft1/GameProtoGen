@@ -1,7 +1,6 @@
-// GameProtoGen/ChatPanel.cpp
 #include "ChatPanel.h"
 #include "Runtime/SceneContext.h"
-#include "Runtime/EditorContext.h"   // << agregado
+#include "Runtime/EditorContext.h"
 #include "ECS/Scene.h"
 #include "ECS/SceneSerializer.h"
 #include <imgui.h>
@@ -594,6 +593,10 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
                 Renderer2D::InvalidateTexture(op["texturePath"].get<std::string>());
             }
 
+            if (op.contains("isTrigger") && op["isTrigger"].is_boolean()) {
+                scx.scene->colliders[e.id].isTrigger = op["isTrigger"].get<bool>();
+            }
+
             created.insert(e.id);
         }
         else if (type == "set_transform") {
@@ -701,7 +704,31 @@ ChatPanel::OpCounts ChatPanel::ApplyOpsFromJson(const json& resp) {
                     if (created.count(id) == 0) modified.insert(id);
                 }
             }
-        }
+            else if (id && comp == "Collider" && op.contains("value") && op["value"].is_object()) {
+                auto& scene = *scx.scene;
+
+                // Asegurar que exista el collider con defaults
+                if (!scene.colliders.contains(id)) {
+                    sf::Vector2f he{ 16.f,16.f };
+                    if (scene.sprites.contains(id)) {
+                        auto sz = scene.sprites[id].size;
+                        he = { std::max(1.f, sz.x * 0.5f), std::max(1.f, sz.y * 0.5f) };
+                    }
+                    scene.colliders[id] = Collider{ he, {0.f,0.f} /*, .isTrigger = false si tu struct lo tiene */ };
+                }
+
+                auto& col = scene.colliders[id];
+                const auto& value = op["value"];
+
+                // ✅ ÚNICO campo permitido: isTrigger
+                if (value.contains("isTrigger") && value["isTrigger"].is_boolean()) {
+                    col.isTrigger = value["isTrigger"].get<bool>();
+                    if (created.count(id) == 0) modified.insert(id);
+                }
+
+                // Ignorar cualquier otro campo (offset/halfExtents) si viniera por error
+            }
+}
         else if (type == "remove_entity") {
             uint32_t id = GetEntityId(op);
             if (id && scx.scene) {

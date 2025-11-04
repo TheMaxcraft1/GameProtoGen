@@ -2,15 +2,20 @@
 #include "ECS/Components.h"
 #include <SFML/Window/Keyboard.hpp>
 #include <algorithm>   // std::clamp (si lo necesitás)
-#include <string>      // ← necesitabas esto si usabas std::string en helpers (ya lo quitamos)
+#include <string>
 #include <unordered_set>
+#include <vector>      // <-- NUEVO: buffer de eventos
 #include "Core/Log.h"
 #include "Systems/ScriptSystem.h"
 
 namespace Systems {
 
+    // --- Overlaps para detectar enter/exit ---
     static std::unordered_set<uint64_t> s_prevOverlaps;
     static std::unordered_set<uint64_t> s_currOverlaps;
+
+    struct TriggerEvt { EntityID trigger; EntityID other; };
+    static std::vector<TriggerEvt> s_pendingTriggerEnter;
 
     static inline uint64_t PairKey(EntityID a, EntityID b) {
         // dirigido (A → B). Si quisieras no dirigido: ordená min/max.
@@ -18,10 +23,8 @@ namespace Systems {
     }
 
     static inline void FireTriggerEnter(Scene& scene, EntityID triggerId, EntityID otherId) {
-        (void)scene;
         Log::Info("[TRIGGER] enter  trigger=" + std::to_string(triggerId) +
             " other=" + std::to_string(otherId));
-
         Systems::ScriptSystem::OnTriggerEnter(scene, triggerId, otherId);
     }
 
@@ -129,11 +132,13 @@ namespace Systems {
     void CollisionSystem::ResetTriggers() {
         s_prevOverlaps.clear();
         s_currOverlaps.clear();
+        s_pendingTriggerEnter.clear(); // <-- NUEVO
     }
 
     void CollisionSystem::SolveAABB(Scene& scene) {
         // Limpiamos los overlaps de este frame
         s_currOverlaps.clear();
+        s_pendingTriggerEnter.clear(); // <-- NUEVO: vaciar buffer por frame
 
         for (auto& [idA, phA] : scene.physics) {
             if (!scene.transforms.contains(idA) || !scene.colliders.contains(idA)) continue;
@@ -188,14 +193,15 @@ namespace Systems {
                         if (aTrig) {
                             const uint64_t kAB = PairKey(idA, idB);
                             if (!s_prevOverlaps.count(kAB)) {
-                                FireTriggerEnter(scene, idA, idB);
+                                // en vez de disparar YA, bufferizamos
+                                s_pendingTriggerEnter.push_back({ idA, idB }); // <-- NUEVO
                             }
                             s_currOverlaps.insert(kAB);
                         }
                         if (bTrig) {
                             const uint64_t kBA = PairKey(idB, idA);
                             if (!s_prevOverlaps.count(kBA)) {
-                                FireTriggerEnter(scene, idB, idA);
+                                s_pendingTriggerEnter.push_back({ idB, idA }); // <-- NUEVO
                             }
                             s_currOverlaps.insert(kBA);
                         }
@@ -219,9 +225,20 @@ namespace Systems {
             }
         }
 
+        if (!s_pendingTriggerEnter.empty()) {
+            for (const auto& e : s_pendingTriggerEnter) {
+                // validación defensiva por si algo cambió antes del despacho
+                if (e.trigger && e.other &&
+                    scene.colliders.contains(e.trigger) &&
+                    scene.transforms.contains(e.trigger)) {
+                    FireTriggerEnter(scene, e.trigger, e.other);
+                }
+            }
+            s_pendingTriggerEnter.clear();
+        }
+
         // Rotamos buffers para el próximo frame (lo que fue curr ahora es prev)
         s_prevOverlaps.swap(s_currOverlaps);
     }
-
 
 } // namespace Systems
